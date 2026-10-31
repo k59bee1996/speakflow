@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "next": "^16.5.0-canary.34"
+  },
+  "_npx": {
+    "packages": [
+      "next@16.5.0-canary.34"
+    ]
+  }
+}
