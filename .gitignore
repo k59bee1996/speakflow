@@ -1,17 +1,34 @@
-node_modules
-.next
-out
-.env*.local
-.env
-*.tsbuildinfo
-next-env.d.ts
-.DS_Store
 
-# Dependencies and package caches
-node_modules/
-.npm-cache/
+# Dependencies
+**/node_modules/
+
+# Next.js
+**/.next/
+**/out/
 
 # Build outputs
-.next/
-out/
-dist/
+**/dist/
+**/build/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# TypeScript
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# .NET
+**/bin/
+**/obj/
+
+# IDE and OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Package manager cache
+.npm-cache/
