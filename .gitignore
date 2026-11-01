@@ -27,6 +27,10 @@
 .vs/
 .vscode/
 .idea/
+.github/
+!.github/
+.github/*
+!.github/pull_request_template.md
 .DS_Store
 Thumbs.db
 

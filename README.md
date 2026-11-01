@@ -89,3 +89,7 @@ Toàn bộ chủ đề tuần, cụm từ, bộ thẻ có sẵn và câu lệnh 
 - Thêm `manifest.webmanifest` và icon để cài app lên màn hình điện thoại.
 - Viết test cho `src/lib/srs.ts` và `src/lib/queue.ts`.
 - Cân nhắc đổi sang thuật toán FSRS (thư viện `ts-fsrs`) khi có nhiều dữ liệu ôn.
+
+## Thiết kế
+
+Mọi thay đổi giao diện phải tuân theo [hệ thống thiết kế](docs/design/DESIGN.md).

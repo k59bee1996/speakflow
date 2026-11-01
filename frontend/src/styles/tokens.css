@@ -1,0 +1,101 @@
+/*
+ * Speakflow design tokens — nguồn sự thật duy nhất cho màu, chữ, khoảng cách.
+ * Theo wireframe v0.2: https://claude.ai/artifact/DBJxog1GcvzqXdEiZBUcaw
+ * Chỉ sửa file này khi Hoàng yêu cầu. Mọi giá trị khác trong code phải dùng var(--…).
+ */
+:root {
+  /* Màu: chế độ sáng */
+  --color-bg: #EEF2FF;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #EBEEF8;
+  --color-border: #C7D2FE;
+  --color-border-strong: #A5B4FC;
+  --color-text: #312E81;
+  --color-text-muted: #475569;
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  --color-on-primary: #FFFFFF;
+  --color-inverse: #312E81;
+  --color-on-inverse: #FFFFFF;
+  --color-success: #16A34A;
+  --color-danger: #DC2626;
+  --color-highlight-bg: #EBEEF8;
+  --color-highlight-text: #4338CA;
+
+  /* Chữ */
+  --font-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Lexend", "Be Vietnam Pro", system-ui, sans-serif;
+  --text-display: 34px;   /* Tiêu đề màn Hôm nay */
+  --text-title: 26px;     /* Tiêu đề phần trong buổi */
+  --text-timer: 64px;     /* Đồng hồ 4/3/2 */
+  --text-practice: 22px;  /* Câu tiếng Anh cần luyện */
+  --text-lead: 18px;
+  --text-body: 16px;
+  --text-ui: 15px;
+  --text-small: 14px;
+  --text-caption: 13px;
+  --text-micro: 12px;
+  --leading-tight: 1.1;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Khoảng cách: thang 4px */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --screen-padding: 20px;
+
+  /* Bo góc */
+  --radius-chip: 6px;
+  --radius-input: 10px;
+  --radius-control: 12px;
+  --radius-card: 14px;
+  --radius-hero: 16px;
+  --radius-pill: 999px;
+
+  /* Kích thước */
+  --touch-min: 44px;
+  --cta-height: 52px;
+  --nav-height: 72px;
+  --progress-height: 6px;
+  --icon-size: 22px;
+  --icon-stroke: 1.8;
+
+  /* Chuyển động và focus */
+  --motion-fast: 150ms ease;
+  --focus-ring: 3px solid var(--color-primary);
+  --focus-offset: 2px;
+}
+
+/* Màu: chế độ tối */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #11132A;
+    --color-surface: #1B1E3A;
+    --color-surface-muted: #24284A;
+    --color-border: #343A66;
+    --color-border-strong: #4B5290;
+    --color-text: #E0E7FF;
+    --color-text-muted: #A3AED0;
+    --color-primary: #818CF8;
+    --color-primary-hover: #A5B4FC;
+    --color-on-primary: #11132A;
+    --color-inverse: #E0E7FF;
+    --color-on-inverse: #11132A;
+    --color-success: #4ADE80;
+    --color-danger: #F87171;
+    --color-highlight-bg: #2B3060;
+    --color-highlight-text: #C7D2FE;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms linear; }
+}
