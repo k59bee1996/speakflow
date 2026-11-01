@@ -6,3 +6,12 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Dependencies and package caches
+node_modules/
+.npm-cache/
+
+# Build outputs
+.next/
+out/
+dist/
