@@ -36,3 +36,5 @@ Thumbs.db
 
 # Package manager cache
 .npm-cache/
+
+.agents

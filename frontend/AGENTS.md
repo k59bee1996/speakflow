@@ -1,5 +1,15 @@
 # Speakflow web: rules for AI agents
 
+## Mandatory Tailwind CSS standard
+
+- Frontend framework: Next.js 16.4.3 (App Router). Tailwind CSS is not currently declared in `package.json` or `package-lock.json`.
+- Tailwind CSS is required for every task that creates or updates UI, layout, responsive behavior, or styling. If it is not available in the working setup, treat that as a blocker for the UI implementation and report it; do not substitute plain/custom CSS or install dependencies without explicit authorization.
+- Prefer Tailwind utility classes for styling and responsive variants. Reuse the approved components in `src/components/ui/`; put repeated UI patterns in reusable components rather than duplicating long utility strings.
+- Follow `../docs/design/DESIGN.md` and `src/styles/tokens.css`: use utilities backed by the existing design tokens for colors, typography, spacing, and sizing. Do not introduce raw design values or change tokens/design documentation unless explicitly asked.
+- Build mobile-first layouts, then add breakpoint variants for larger screens. Check narrow and wide layouts, prevent overflow, and preserve clear interaction states.
+- Keep UI accessible: semantic HTML, associated labels, keyboard operation, visible focus, sufficient contrast, and appropriate accessible names/states. Do not rely on color alone to communicate meaning.
+- Custom CSS is an exception only when Tailwind utilities cannot reasonably express the requirement (for example, a complex animation or an unavoidable third-party override). Keep it minimal, explain why it is needed, and continue to use design tokens; do not use custom CSS as a parallel styling system.
+
 ## Design is mandatory for every UI change
 
 Before you create a screen, change a layout, or touch any style:
