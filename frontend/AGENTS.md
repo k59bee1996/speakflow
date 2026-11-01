@@ -2,13 +2,12 @@
 
 ## Mandatory Tailwind CSS standard
 
-- Frontend framework: Next.js 16.4.3 (App Router). Tailwind CSS is not currently declared in `package.json` or `package-lock.json`.
-- Tailwind CSS is required for every task that creates or updates UI, layout, responsive behavior, or styling. If it is not available in the working setup, treat that as a blocker for the UI implementation and report it; do not substitute plain/custom CSS or install dependencies without explicit authorization.
-- Prefer Tailwind utility classes for styling and responsive variants. Reuse the approved components in `src/components/ui/`; put repeated UI patterns in reusable components rather than duplicating long utility strings.
-- Follow `../docs/design/DESIGN.md` and `src/styles/tokens.css`: use utilities backed by the existing design tokens for colors, typography, spacing, and sizing. Do not introduce raw design values or change tokens/design documentation unless explicitly asked.
+- Use Tailwind utilities for all newly implemented or migrated UI, layout, responsive behavior, and styling. Existing global CSS may remain for unmigrated screens; when updating styling, migrate the touched pattern instead of extending the legacy stylesheet.
+- Follow `../docs/design/DESIGN.md` and `src/styles/tokens.css`: use the token-backed Tailwind theme utilities for colors, typography, spacing, and sizing. Do not introduce raw design values or change tokens/design documentation unless explicitly asked.
+- Reuse existing shared components where available. The documented `src/components/ui/` library is not yet present; create shared UI components incrementally when a pattern needs reuse and document them in `DESIGN.md`.
 - Build mobile-first layouts, then add breakpoint variants for larger screens. Check narrow and wide layouts, prevent overflow, and preserve clear interaction states.
 - Keep UI accessible: semantic HTML, associated labels, keyboard operation, visible focus, sufficient contrast, and appropriate accessible names/states. Do not rely on color alone to communicate meaning.
-- Custom CSS is an exception only when Tailwind utilities cannot reasonably express the requirement (for example, a complex animation or an unavoidable third-party override). Keep it minimal, explain why it is needed, and continue to use design tokens; do not use custom CSS as a parallel styling system.
+- Custom CSS is allowed only when Tailwind cannot reasonably express the requirement (for example, a complex animation or an unavoidable third-party override). Give the technical reason, keep it minimal, and continue to use design tokens; do not use custom CSS as a parallel styling system.
 
 ## Design is mandatory for every UI change
 
@@ -17,9 +16,9 @@ Before you create a screen, change a layout, or touch any style:
 1. Read `../docs/design/DESIGN.md` in full. It is the design law of this project and overrides your own design preferences.
 2. Use only the CSS variables in `src/styles/tokens.css`. Never write a raw color (hex, rgb, hsl),
    a font family, or a spacing value outside the `--space-*` scale.
-3. Build screens only from components in `src/components/ui/`. If a pattern you need does not
-   exist, add it there AND document it in the component table of `DESIGN.md` in the same change.
-   Do not create one-off styled elements inside a screen.
+3. Reuse components from `src/components/ui/` where available. The shared UI directory is not
+   yet implemented; add reusable components there incrementally when a pattern needs reuse and
+   document each new component in the table of `DESIGN.md` in the same change.
 4. Follow the screen templates in `DESIGN.md` section 4: in-session screens always start with
    `SessionHeader`; one primary button per screen; loading, empty, error and normal states.
 5. UI text is Vietnamese. English practice sentences use `--font-display` and `lang="en"`.

@@ -1,3 +1,56 @@
+@layer theme, base, components, utilities;
+
+@import url("tailwindcss/theme.css") layer(theme);
+@import url("tailwindcss/utilities.css") layer(utilities);
+
+@theme inline {
+  --color-token-bg: var(--color-bg);
+  --color-token-surface: var(--color-surface);
+  --color-token-surface-muted: var(--color-surface-muted);
+  --color-token-border: var(--color-border);
+  --color-token-border-strong: var(--color-border-strong);
+  --color-token-text: var(--color-text);
+  --color-token-text-muted: var(--color-text-muted);
+  --color-token-primary: var(--color-primary);
+  --color-token-primary-hover: var(--color-primary-hover);
+  --color-token-on-primary: var(--color-on-primary);
+  --color-token-inverse: var(--color-inverse);
+  --color-token-on-inverse: var(--color-on-inverse);
+  --color-token-success: var(--color-success);
+  --color-token-danger: var(--color-danger);
+  --color-token-highlight-bg: var(--color-highlight-bg);
+  --color-token-highlight-text: var(--color-highlight-text);
+  --font-token-ui: var(--font-ui);
+  --font-token-display: var(--font-display);
+  --text-token-display: var(--text-display);
+  --text-token-title: var(--text-title);
+  --text-token-timer: var(--text-timer);
+  --text-token-practice: var(--text-practice);
+  --text-token-lead: var(--text-lead);
+  --text-token-body: var(--text-body);
+  --text-token-ui: var(--text-ui);
+  --text-token-small: var(--text-small);
+  --text-token-caption: var(--text-caption);
+  --text-token-micro: var(--text-micro);
+  --spacing-space-1: var(--space-1);
+  --spacing-space-2: var(--space-2);
+  --spacing-space-3: var(--space-3);
+  --spacing-space-4: var(--space-4);
+  --spacing-space-5: var(--space-5);
+  --spacing-space-6: var(--space-6);
+  --spacing-space-7: var(--space-7);
+  --spacing-screen: var(--screen-padding);
+  --spacing-touch: var(--touch-min);
+  --spacing-cta: var(--cta-height);
+  --spacing-nav: var(--nav-height);
+  --radius-token-chip: var(--radius-chip);
+  --radius-token-input: var(--radius-input);
+  --radius-token-control: var(--radius-control);
+  --radius-token-card: var(--radius-card);
+  --radius-token-hero: var(--radius-hero);
+  --radius-token-pill: var(--radius-pill);
+}
+
 :root {
   --bg: #F3F5F1; --surface: #FFFFFF; --ink: #18233A; --muted: #5D6678; --line: #DCE1DA; --soft: #E9EDE7;
   --p1: #2F5BEA; --p2: #B57A06; --p3: #178A6B; --on: #FFFFFF; --bad: #C2412D;

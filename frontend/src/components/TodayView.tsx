@@ -102,7 +102,7 @@ export default function TodayView() {
         </div>
       </div>
 
-      <div className="row between" style={{ marginTop: 26 }}>
+      <div className="flex flex-wrap items-center justify-between gap-(--space-3)" style={{ marginTop: 26 }}>
         <h2 style={{ margin: 0 }}>Buổi tập hôm nay</h2>
         <div className="seg" role="group" aria-label="Thời lượng">
           {(["30", "60"] as const).map((m) => (
