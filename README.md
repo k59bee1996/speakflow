@@ -93,3 +93,5 @@ Toàn bộ chủ đề tuần, cụm từ, bộ thẻ có sẵn và câu lệnh 
 ## Thiết kế
 
 Mọi thay đổi giao diện phải tuân theo [hệ thống thiết kế](docs/design/DESIGN.md).
+
+Quy tắc cho agent nằm trong `AGENTS.md` và file `AGENTS.md` trong từng thư mục.

@@ -3,8 +3,8 @@
 Tài liệu này là luật thiết kế của Speakflow. Mọi màn hình, mọi thay đổi layout, dù do người hay AI agent làm, đều phải theo đúng tài liệu này.
 
 - Wireframe gốc v0.2: https://claude.ai/artifact/DBJxog1GcvzqXdEiZBUcaw
-- Token: `web/src/styles/tokens.css`
-- Component dùng chung: `web/src/components/ui/`
+- Token: `frontend/src/styles/tokens.css`
+- Component dùng chung: `frontend/src/components/ui/`
 
 Thứ tự ưu tiên khi có mâu thuẫn: tài liệu này, rồi `tokens.css`, rồi wireframe.
 
@@ -60,7 +60,7 @@ Màu chỉ mang thêm ý nghĩa, không bao giờ là cách duy nhất để tru
 
 ## 3. Component
 
-Chỉ dựng màn từ các component trong `web/src/components/ui/`. Thiếu component thì thêm vào đó và ghi vào bảng này trong cùng pull request.
+Chỉ dựng màn từ các component trong `frontend/src/components/ui/`. Thiếu component thì thêm vào đó và ghi vào bảng này trong cùng pull request.
 
 | Component | Mô tả và luật dùng |
 | --- | --- |
