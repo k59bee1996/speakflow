@@ -21,18 +21,60 @@ async function makeRepository(t) {
   return directory;
 }
 
-function run(cwd, args, input) {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [utility, ...args], { cwd, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
-    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => resolve({ code: -1, stdout, stderr: `${stderr}${error.message}` }));
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-    if (input !== undefined) child.stdin.end(input);
-    else child.stdin.end();
+function launch(cwd, args, env = {}) {
+  const child = spawn(process.execPath, [utility, ...args], {
+    cwd,
+    env: { ...process.env, ...env },
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  let stdout = "";
+  let stderr = "";
+  const waiters = [];
+  child.stdout.setEncoding("utf8").on("data", (chunk) => {
+    stdout += chunk;
+    for (let i = waiters.length - 1; i >= 0; i -= 1) {
+      if (stdout.includes(waiters[i].marker)) waiters.splice(i, 1)[0].resolve();
+    }
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+  const result = new Promise((resolve) => {
+    child.on("error", (error) => resolve({ code: -1, signal: null, stdout, stderr: `${stderr}${error.message}` }));
+    child.on("close", (code, signal) => {
+      while (waiters.length) waiters.pop().reject(new Error(`Utility exited before emitting a pause marker (exit ${code}, ${signal}).`));
+      resolve({ code, signal, stdout, stderr });
+    });
+  });
+  return {
+    child,
+    result,
+    waitFor(marker) {
+      if (stdout.includes(marker)) return Promise.resolve();
+      return new Promise((resolve, reject) => waiters.push({ marker, resolve, reject }));
+    },
+    continueWith(file) {
+      return writeFile(file, "continue\n");
+    },
+    get stdout() { return stdout; },
+    get stderr() { return stderr; },
+  };
+}
+
+function run(cwd, args, input) {
+  const process = launch(cwd, args);
+  process.child.stdin.end(input);
+  return process.result;
+}
+
+async function pauseAt(t, cwd, args, checkpoint) {
+  const continueFile = path.join(cwd, `continue-${checkpoint}.tmp`);
+  t.after(() => rm(continueFile, { force: true }));
+  const process = launch(cwd, args, {
+    NODE_ENV: "test",
+    SE_FLOW_LOCK_TEST_PAUSE_AT: checkpoint,
+    SE_FLOW_LOCK_TEST_CONTINUE_FILE: continueFile,
+  });
+  await process.waitFor(`TEST_PAUSED ${checkpoint}`);
+  return { ...process, continueFile };
 }
 
 async function acquire(cwd, ticket, sessionId) {
@@ -43,6 +85,10 @@ async function acquire(cwd, ticket, sessionId) {
 
 function lockPath(repository) {
   return path.join(repository, ".git", "se-flow.lock");
+}
+
+function mutationGuardPath(repository) {
+  return path.join(repository, ".git", "se-flow.lock.mutation-guard");
 }
 
 test("owner verifies and releases; a blocked session can then acquire", async (t) => {
@@ -88,6 +134,75 @@ test("simultaneous acquisition has exactly one winner", async (t) => {
   assert.equal(results.filter((result) => result.code === 10).length, 1);
 });
 
+test("two simultaneous releases cannot remove a subsequent owner's lock", async (t) => {
+  const repository = await makeRepository(t);
+  const owner = await acquire(repository, "issue 43", "session-a");
+  const firstRelease = await pauseAt(t, repository, ["release", "--token", owner.ownershipToken], "after-lock-removed");
+  const secondRelease = await run(repository, ["release", "--token", owner.ownershipToken]);
+  assert.equal(secondRelease.code, 10);
+  assert.match(secondRelease.stderr, /mutation guard/);
+  await firstRelease.continueWith(firstRelease.continueFile);
+  assert.equal((await firstRelease.result).code, 0);
+
+  const nextOwner = await acquire(repository, "issue 44", "session-b");
+  const staleRelease = await run(repository, ["release", "--token", owner.ownershipToken]);
+  assert.notEqual(staleRelease.code, 0);
+  assert.equal((await run(repository, ["verify", "--token", nextOwner.ownershipToken])).code, 0);
+});
+
+test("release and acquisition are serialized across lock removal and path reuse", async (t) => {
+  const repository = await makeRepository(t);
+  const oldOwner = await acquire(repository, "issue 45", "session-a");
+  const releaseProcess = await pauseAt(t, repository, ["release", "--token", oldOwner.ownershipToken], "after-lock-removed");
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 46", "--session-id", "session-b"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /mutation guard/);
+  await releaseProcess.continueWith(releaseProcess.continueFile);
+  assert.equal((await releaseProcess.result).code, 0);
+
+  const newOwner = await acquire(repository, "issue 46", "session-b");
+  assert.notEqual((await run(repository, ["release", "--token", oldOwner.ownershipToken])).code, 0);
+  assert.equal((await run(repository, ["verify", "--token", newOwner.ownershipToken])).code, 0);
+});
+
+test("recovery and acquisition are serialized", async (t) => {
+  const repository = await makeRepository(t);
+  const oldOwner = await acquire(repository, "issue 47", "abandoned-session");
+  const recovery = await pauseAt(t, repository, [
+    "force-unlock", "--owner", oldOwner.sessionId,
+    "--confirm", `FORCE UNLOCK ${oldOwner.sessionId}`,
+  ], "after-lock-removed");
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 48", "--session-id", "session-b"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /mutation guard/);
+  await recovery.continueWith(recovery.continueFile);
+  assert.equal((await recovery.result).code, 0);
+
+  const newOwner = await acquire(repository, "issue 48", "session-b");
+  assert.equal((await run(repository, ["verify", "--token", newOwner.ownershipToken])).code, 0);
+});
+
+test("recovery and release cannot interleave on the same lock", async (t) => {
+  const repository = await makeRepository(t);
+  const owner = await acquire(repository, "issue 49", "session-a");
+  const recovery = await pauseAt(t, repository, [
+    "force-unlock", "--owner", owner.sessionId,
+    "--confirm", `FORCE UNLOCK ${owner.sessionId}`,
+  ], "after-guard-ready");
+
+  const blockedRelease = await run(repository, ["release", "--token", owner.ownershipToken]);
+  assert.equal(blockedRelease.code, 10);
+  assert.match(blockedRelease.stderr, /mutation guard/);
+  await recovery.continueWith(recovery.continueFile);
+  assert.equal((await recovery.result).code, 0);
+  assert.notEqual((await run(repository, ["release", "--token", owner.ownershipToken])).code, 0);
+
+  const newOwner = await acquire(repository, "issue 50", "session-b");
+  assert.equal((await run(repository, ["verify", "--token", newOwner.ownershipToken])).code, 0);
+});
+
 test("a crashed controller leaves a recoverable lock and never triggers automatic stealing", async (t) => {
   const repository = await makeRepository(t);
   const owner = await acquire(repository, "issue 70", "crashed-session");
@@ -101,6 +216,69 @@ test("a crashed controller leaves a recoverable lock and never triggers automati
   assert.match(inspected.stdout, /"ticket": "issue 70"/);
   assert.match(inspected.stdout, /"state": "active"/);
   assert.ok(owner.ownershipToken);
+});
+
+test("ownership token remains valid across independent utility processes", async (t) => {
+  const repository = await makeRepository(t);
+  const owner = await acquire(repository, "issue 72", "session-a");
+  const verifiedInAnotherProcess = await run(repository, ["verify", "--token", owner.ownershipToken]);
+  assert.equal(verifiedInAnotherProcess.code, 0, verifiedInAnotherProcess.stderr);
+  assert.match(verifiedInAnotherProcess.stdout, /"verified": true/);
+});
+
+test("crash during lock metadata creation leaves a guard and partial lock blocked", async (t) => {
+  const repository = await makeRepository(t);
+  const crash = await pauseAt(t, repository, ["acquire", "--ticket", "issue 73", "--session-id", "crashed-session"], "after-lock-directory");
+  crash.child.kill("SIGKILL");
+  const result = await crash.result;
+  assert.notEqual(result.code, 0);
+  assert.equal(await readFile(path.join(lockPath(repository), "owner.json"), "utf8").then(() => true, () => false), false);
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 74", "--session-id", "session-b"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /mutation guard/);
+  const inspected = await run(repository, ["inspect"]);
+  assert.match(inspected.stdout, /Mutation guard requires inspection/);
+  assert.match(inspected.stdout, /metadata is missing or incomplete/);
+});
+
+test("crash during mutation guard metadata creation leaves the guard blocked", async (t) => {
+  const repository = await makeRepository(t);
+  const crash = await pauseAt(t, repository, ["acquire", "--ticket", "issue 74a", "--session-id", "crashed-session"], "after-guard-directory");
+  crash.child.kill("SIGKILL");
+  assert.notEqual((await crash.result).code, 0);
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 74b", "--session-id", "session-b"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /mutation guard.*metadata is missing or incomplete/);
+  const inspected = await run(repository, ["inspect"]);
+  assert.match(inspected.stdout, /Mutation guard requires manual inspection/);
+  assert.equal(await readFile(path.join(mutationGuardPath(repository), "owner.json"), "utf8").then(() => true, () => false), false);
+});
+
+test("crash during release preserves an ambiguous guard and blocks new owners", async (t) => {
+  const repository = await makeRepository(t);
+  const owner = await acquire(repository, "issue 75", "session-a");
+  const crash = await pauseAt(t, repository, ["release", "--token", owner.ownershipToken], "after-lock-removed");
+  crash.child.kill("SIGKILL");
+  assert.notEqual((await crash.result).code, 0);
+  assert.equal(await readFile(path.join(lockPath(repository), "owner.json"), "utf8").then(() => true, () => false), false);
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 76", "--session-id", "session-b"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /mutation guard/);
+});
+
+test("abandoned mutation guards are inspected and never auto-cleaned", async (t) => {
+  const repository = await makeRepository(t);
+  await mkdir(mutationGuardPath(repository));
+
+  const blocked = await run(repository, ["acquire", "--ticket", "issue 77", "--session-id", "session-a"]);
+  assert.equal(blocked.code, 10);
+  assert.match(blocked.stderr, /metadata is missing or incomplete/);
+  const inspected = await run(repository, ["inspect"]);
+  assert.match(inspected.stdout, /Mutation guard requires manual inspection/);
+  assert.equal(await readFile(path.join(mutationGuardPath(repository), "owner.json"), "utf8").then(() => true, () => false), false);
 });
 
 test("worktrees share the canonical common-directory lock", async (t) => {

@@ -44,3 +44,7 @@ Thumbs.db
 .agents/skills/*
 !.agents/skills/se-flow/
 !.agents/skills/se-flow/**
+
+# Local Codex hook logs
+.codex/
+
