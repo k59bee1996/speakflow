@@ -10,7 +10,7 @@ export default defineConfig([
     rules: {
       "no-restricted-syntax": ["error", {
         selector: "Literal[value=/#[0-9a-fA-F]{3,8}\\b|rgba?\\(|hsla?\\(/]",
-        message: "Use tokens from src/styles/tokens.css instead of hard-coded colors.",
+        message: "Dùng token trong src/styles/tokens.css, không viết mã màu trực tiếp.",
       }],
     },
   },
