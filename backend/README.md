@@ -16,12 +16,11 @@ $env:MSSQL_SA_PASSWORD = '<your-local-SQL-Server-password>'
 docker compose up -d sqlserver
 ```
 
-Store the application connection string in user-secrets. The example below reads the password from the shell variable and does not write it to a tracked file.
+Provide the full development connection string through the SPEAKFLOW_SQL_CONNECTION shell variable, then store it in user-secrets. Keep its value outside the repository.
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-$connectionString = "Server=localhost,1433;Database=Speakflow;User Id=sa;Password=$env:MSSQL_SA_PASSWORD;Encrypt=False;TrustServerCertificate=True"
-dotnet user-secrets set 'ConnectionStrings:Speakflow' $connectionString --project src/Speakflow.Api
+dotnet user-secrets set 'ConnectionStrings:Speakflow' $env:SPEAKFLOW_SQL_CONNECTION --project src/Speakflow.Api
 ```
 
 Restore the local EF tool and apply the migration to the empty database:

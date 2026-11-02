@@ -13,7 +13,7 @@ public sealed class SpeakflowDbContextModelTests
     public void EveryUserDataTableHasRequiredUserForeignKeyAndUserFirstIndex()
     {
         var options = new DbContextOptionsBuilder<SpeakflowDbContext>()
-            .UseSqlServer("Server=localhost;Database=SpeakflowModelOnly;Trusted_Connection=True;TrustServerCertificate=True")
+            .UseSqlServer()
             .Options;
         using var context = new SpeakflowDbContext(options);
 
@@ -28,7 +28,7 @@ public sealed class SpeakflowDbContextModelTests
     public void CardsAllowMultipleUserCreatedRowsWithoutASeedKey()
     {
         var options = new DbContextOptionsBuilder<SpeakflowDbContext>()
-            .UseSqlServer("Server=localhost;Database=SpeakflowModelOnly;Trusted_Connection=True;TrustServerCertificate=True")
+            .UseSqlServer()
             .Options;
         using var context = new SpeakflowDbContext(options);
 
@@ -44,7 +44,7 @@ public sealed class SpeakflowDbContextModelTests
     public void InitialMigrationCreatesIdentityAndV02DataTables()
     {
         var options = new DbContextOptionsBuilder<SpeakflowDbContext>()
-            .UseSqlServer("Server=localhost;Database=SpeakflowModelOnly;Trusted_Connection=True;TrustServerCertificate=True")
+            .UseSqlServer()
             .Options;
         using var context = new SpeakflowDbContext(options);
 
