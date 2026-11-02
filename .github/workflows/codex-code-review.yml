@@ -1,0 +1,116 @@
+name: Codex Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  # Keeps the ChatGPT session in auth.json refreshed when no PR has run for a while.
+  schedule:
+    - cron: "17 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number || github.run_id }}
+  # Never kill a run mid-way: it may be rewriting auth.json during a token refresh.
+  cancel-in-progress: false
+
+env:
+  # Persistent on the self-hosted runner. auth.json is seeded once by hand (see .github/codex/README.md)
+  # and from then on refreshed by Codex in place — never overwrite it from a secret.
+  CODEX_HOME: /home/runner/.codex-review
+  CODEX_LOCK: /home/runner/.codex-review/run.lock
+
+jobs:
+  keepalive:
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, codex-review]
+    steps:
+      - name: Refresh the ChatGPT session
+        run: flock "$CODEX_LOCK" codex exec --sandbox read-only --skip-git-repo-check "Reply with OK."
+
+  review:
+    if: >-
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, codex-review]
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0 # git log / blame / merge-base need full history
+          persist-credentials: false
+
+      - name: Check the runner
+        run: |
+          set -euo pipefail
+          test -s "$CODEX_HOME/auth.json" || { echo "::error::$CODEX_HOME/auth.json is missing - seed it with codex login (.github/codex/README.md)"; exit 1; }
+          command -v flock gh codex
+          codex --version
+
+      - name: Collect PR context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,author,headRefOid,baseRefName,commits,files,comments,reviews \
+            > "$RUNNER_TEMP/pr.json"
+
+      - name: Compose the prompt
+        run: |
+          set -euo pipefail
+          INSTR=.github/codex/review.md
+          # From the base branch, so a PR cannot rewrite the rules it is reviewed against.
+          if ! git show "origin/$BASE_REF:$INSTR" > "$RUNNER_TEMP/prompt.md" 2>/dev/null; then
+            echo "::warning::$INSTR is not on $BASE_REF yet - using this PR's copy"
+            cp "$INSTR" "$RUNNER_TEMP/prompt.md"
+          fi
+          cat >> "$RUNNER_TEMP/prompt.md" <<EOF
+
+          ---
+          Pull request #$PR of $GITHUB_REPOSITORY.
+          Head SHA (checked out as HEAD): $HEAD_SHA
+          Base branch: origin/$BASE_REF
+          PR metadata, earlier comments and reviews (JSON): $RUNNER_TEMP/pr.json
+          EOF
+
+      - name: Run Codex
+        env:
+          CODEX_MODEL: ${{ vars.CODEX_MODEL }}
+          CODEX_EFFORT: ${{ vars.CODEX_EFFORT }}
+        run: |
+          set -euo pipefail
+          ARGS=(--sandbox read-only --output-last-message "$RUNNER_TEMP/review.md")
+          if [ -n "${CODEX_MODEL:-}" ]; then ARGS+=(--model "$CODEX_MODEL"); fi
+          if [ -n "${CODEX_EFFORT:-}" ]; then ARGS+=(-c "model_reasoning_effort=$CODEX_EFFORT"); fi
+          # One auth.json, one run at a time - across every repo that shares this runner.
+          flock "$CODEX_LOCK" codex exec "${ARGS[@]}" - < "$RUNNER_TEMP/prompt.md"
+
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/review.md"
+          test -s "$OUT" || { echo "::error::Codex produced no review"; exit 1; }
+          if [ "$(tr -d '[:space:]' < "$OUT")" = "SKIP" ]; then
+            echo "Reviewer skipped: this head SHA is already reviewed, or the PR is trivial."
+            exit 0
+          fi
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$OUT"
+          # Without the markers the next push cannot scope its review or skip a reviewed SHA.
+          grep -q -e '<!-- reviewed-sha:' -e '<!-- review-incomplete -->' "$OUT" \
+            || { echo "::error::the posted review has no reviewed-sha / review-incomplete marker"; exit 1; }
