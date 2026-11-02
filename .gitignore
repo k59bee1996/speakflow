@@ -40,3 +40,12 @@ Thumbs.db
 .npm-cache/
 
 .agents
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/se-flow/
+!.agents/skills/se-flow/**
+
+# Local Codex hook logs
+.codex/
