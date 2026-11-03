@@ -1,0 +1,14 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in the shell before starting SQL Server}
+    ports:
+      - "1433:1433"
+    volumes:
+      - speakflow-sqlserver-data:/var/opt/mssql
+
+volumes:
+  speakflow-sqlserver-data:
