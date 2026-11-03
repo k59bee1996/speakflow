@@ -14,10 +14,19 @@ public sealed class SpeakflowDbContext(
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<AiRequestLog> AiRequests => Set<AiRequestLog>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            entity.HasKey(session => session.Id);
+            entity.HasIndex(session => session.UserId);
+            entity.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(session => session.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<Profile>(entity =>
         {
@@ -38,6 +47,7 @@ public sealed class SpeakflowDbContext(
 
         modelBuilder.Entity<Card>(entity =>
         {
+            entity.HasQueryFilter(card => !card.IsDeleted);
             entity.ToTable("Cards", table =>
             {
                 table.HasCheckConstraint("CK_Cards_Front_Length", "LEN([Front]) <= 500");
@@ -79,6 +89,7 @@ public sealed class SpeakflowDbContext(
             entity.Property(review => review.ReviewedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             entity.HasIndex(review => new { review.UserId, review.ReviewedAt })
                 .HasDatabaseName("IX_Reviews_UserId_ReviewedAt");
+            entity.HasIndex(review => new { review.UserId, review.ReviewedOn });
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(review => review.UserId)

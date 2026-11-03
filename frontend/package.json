@@ -11,9 +11,6 @@
     "lint:styles": "stylelint \"src/**/*.css\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.133.0",
-    "@supabase/ssr": "0.12.7",
-    "@supabase/supabase-js": "2.117.3",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
