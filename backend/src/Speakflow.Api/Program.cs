@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Speakflow.Api.Health;
@@ -36,14 +37,31 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     },
     ResponseWriter = async (context, report) =>
     {
-        context.Response.ContentType = "application/json";
         var database = report.Entries.TryGetValue("database", out var entry)
             ? entry.Description
             : "Database check is unavailable.";
+
+        if (report.Status == HealthStatus.Healthy)
+        {
+            await context.Response.WriteAsJsonAsync(
+                new { status = report.Status.ToString(), database },
+                cancellationToken: context.RequestAborted);
+            return;
+        }
+
+        var problem = new ProblemDetails
+        {
+            Status = context.Response.StatusCode,
+            Title = "Dịch vụ chưa sẵn sàng.",
+            Detail = "Không thể kết nối tới cơ sở dữ liệu.",
+            Type = "about:blank",
+        };
+        context.Response.ContentType = "application/problem+json";
         await JsonSerializer.SerializeAsync(
             context.Response.Body,
-            new { status = report.Status.ToString(), database },
-            cancellationToken: context.RequestAborted);
+            problem,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            context.RequestAborted);
     },
 });
 
