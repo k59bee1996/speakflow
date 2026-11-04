@@ -210,6 +210,10 @@ namespace Speakflow.Data.Migrations
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("datetimeoffset");
 
+                    b.PrimitiveCollection<string>("LoginFailures")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -286,6 +290,9 @@ namespace Speakflow.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsNew")
                         .ValueGeneratedOnAdd()
@@ -439,6 +446,9 @@ namespace Speakflow.Data.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<DateOnly>("ReviewedOn")
+                        .HasColumnType("date");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
@@ -454,10 +464,31 @@ namespace Speakflow.Data.Migrations
                     b.HasIndex("UserId", "ReviewedAt")
                         .HasDatabaseName("IX_Reviews_UserId_ReviewedAt");
 
+                    b.HasIndex("UserId", "ReviewedOn");
+
                     b.ToTable("Reviews", null, t =>
                         {
                             t.HasCheckConstraint("CK_Reviews_Grade", "[Grade] BETWEEN 0 AND 3");
                         });
+                });
+
+            modelBuilder.Entity("Speakflow.Data.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserSessions");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -555,6 +586,15 @@ namespace Speakflow.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("Speakflow.Data.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Speakflow.Data.Entities.UserSession", b =>
+                {
                     b.HasOne("Speakflow.Data.Entities.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")

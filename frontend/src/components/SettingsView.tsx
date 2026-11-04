@@ -1,82 +1,37 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useApp } from "./AppContext";
-import { TOTAL_WEEKS } from "@/lib/content";
-import { todayISO } from "@/lib/dates";
-
+import { api } from "@/lib/backend/client";
 export default function SettingsView() {
-  const { sb, profile, week, email, updateProfile, signOut, reload, setError } = useApp();
+  const { profile, email, updateProfile, signOut, reload, setError } = useApp();
   const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [counts, setCounts] = useState<{ cards: number; notes: number } | null>(null);
-
   useEffect(() => {
-    Promise.all([
-      sb.from("cards").select("id", { count: "exact", head: true }),
-      sb.from("notes").select("id", { count: "exact", head: true }),
-    ]).then(([c, n]) => setCounts({ cards: c.count ?? 0, notes: n.count ?? 0 }));
-  }, [sb]);
-
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
-
-  async function resetAll() {
-    if (!armed) {
-      setArmed(true);
-      return;
-    }
-    setArmed(false);
-    const uid = profile.user_id;
-    const results = await Promise.all([
-      sb.from("reviews").delete().eq("user_id", uid),
-      sb.from("sessions").delete().eq("user_id", uid),
-      sb.from("notes").delete().eq("user_id", uid),
-    ]);
-    const cards = await sb.from("cards").delete().eq("user_id", uid);
-    const prof = await sb.from("profiles").update({ seeded_weeks: [], checks: [], start_date: todayISO(), mode: "30" }).eq("user_id", uid);
-    if ([...results, cards, prof].some((r) => r.error)) {
-      setError("Chưa xoá hết được dữ liệu. Thử lại sau.");
-    }
-    await reload();
+    Promise.all([api.cards(), api.notes()]).then(([cards, notes]) => setCounts({ cards: cards.length, notes: notes.length }))
+      .catch(e => setError(e instanceof Error ? e.message : "Không tải được dữ liệu."));
+  }, [setError]);
+  useEffect(() => { if (!armed) return; const t = setTimeout(() => setArmed(false), 4000); return () => clearTimeout(t); }, [armed]);
+  async function reset() {
+    if (!armed) { setArmed(true); return; }
+    setArmed(false); setBusy(true);
+    try { await api.resetData(); setCounts({ cards: 0, notes: 0 }); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Chưa xoá được dữ liệu."); }
+    finally { setBusy(false); }
   }
-
-  const where = week === 0 ? "trước ngày bắt đầu" : week > TOTAL_WEEKS ? "sau tuần 12" : `tuần ${week}`;
-
-  return (
-    <>
-      <h1>Cài đặt</h1>
-      <div className="field">
-        <label htmlFor="start">Ngày bắt đầu lộ trình</label>
-        <input
-          id="start"
-          type="date"
-          value={profile.start_date}
-          onChange={(e) => {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) updateProfile({ start_date: e.target.value });
-          }}
-        />
-      </div>
-      <p className="muted small">
-        Hiện bạn đang ở {where}. Đổi ngày bắt đầu sẽ đổi tuần hiện tại và chủ đề tương ứng.
-      </p>
-
-      <h2>Tài khoản</h2>
-      <p className="muted small">Đăng nhập bằng {email}.</p>
-      <button className="btn ghost sm" type="button" onClick={signOut}>Đăng xuất</button>
-
-      <h2>Dữ liệu</h2>
-      <p className="muted small">
-        {counts ? `${counts.cards} thẻ, ${counts.notes} câu trong sổ câu bí.` : "Đang đếm…"}
-      </p>
-      <button className="btn danger sm" type="button" onClick={resetAll}>
-        {armed ? "Bấm lần nữa để xoá hết" : "Xoá toàn bộ dữ liệu học"}
-      </button>
-
-      <h2>Phiên bản</h2>
-      <p className="muted small">Speakflow v0.1: màn Hôm nay, ôn thẻ lật ngược, sổ câu bí.</p>
-    </>
-  );
+  const button = "focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer rounded-token-pill border border-solid border-token-border bg-token-surface px-space-4 text-token-primary disabled:opacity-50";
+  const field = "focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch rounded-token-input border border-solid border-token-border bg-token-surface px-space-3 text-token-text";
+  return <section className="flex flex-col gap-space-4">
+    <h1 className="font-token-display text-token-title">Cài đặt</h1>
+    <label htmlFor="start">Ngày bắt đầu lộ trình</label>
+    <input id="start" type="date" className={field} value={profile.start_date} onChange={e => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) void updateProfile({ start_date: e.target.value }); }} />
+    <label htmlFor="mode">Thời lượng mỗi ngày</label>
+    <select id="mode" className={field} value={profile.mode} onChange={e => void updateProfile({ mode: e.target.value as "30" | "60" })}><option value="30">30 phút</option><option value="60">60 phút</option></select>
+    <h2 className="m-0 font-token-display text-token-lead">Tài khoản</h2>
+    <p className="m-0 break-words text-token-text-muted">Đăng nhập bằng {email}.</p>
+    <button className={button} type="button" onClick={() => void signOut()}>Đăng xuất</button>
+    <h2 className="m-0 font-token-display text-token-lead">Dữ liệu</h2>
+    <p className="m-0 text-token-text-muted">{counts ? `${counts.cards} thẻ, ${counts.notes} câu trong sổ câu bí.` : "Đang đếm…"}</p>
+    <button className={button} type="button" disabled={busy} onClick={() => void reset()}>{busy ? "Đang xoá…" : armed ? "Bấm lần nữa để xoá hết" : "Xoá toàn bộ dữ liệu học"}</button>
+  </section>;
 }

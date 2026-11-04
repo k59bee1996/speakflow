@@ -35,6 +35,7 @@ export interface Note {
   user_id: string;
   vi: string;
   options: NoteOption[];
+  options_version: string;
   carded: number[];
   created_at: string;
 }

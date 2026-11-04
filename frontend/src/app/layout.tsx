@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { Be_Vietnam_Pro, Lexend } from "next/font/google";
 import "../styles/tokens.css";
 import "./globals.css";
+
+const uiFont = Be_Vietnam_Pro({ subsets: ["latin", "vietnamese"], weight: ["400", "500", "600", "700", "800"], variable: "--font-ui", display: "swap" });
+const displayFont = Lexend({ subsets: ["latin", "vietnamese"], variable: "--font-display", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Speakflow",
@@ -12,24 +16,12 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F3F5F1" },
-    { media: "(prefers-color-scheme: dark)", color: "#11161F" },
-  ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="vi">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&display=swap"
-        />
-      </head>
-      <body>{children}</body>
+    <html lang="vi" className={`${uiFont.variable} ${displayFont.variable} scheme-light-dark`}>
+      <body className="bg-token-bg font-token-ui text-token-text">{children}</body>
     </html>
   );
 }

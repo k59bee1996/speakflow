@@ -15,5 +15,6 @@ public sealed class Card
     public int Reps { get; set; }
     public int Lapses { get; set; }
     public bool IsNew { get; set; }
+    public bool IsDeleted { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

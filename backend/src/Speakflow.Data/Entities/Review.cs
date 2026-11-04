@@ -8,4 +8,5 @@ public sealed class Review
     public short Grade { get; set; }
     public bool WasNew { get; set; }
     public DateTimeOffset ReviewedAt { get; set; }
+    public DateOnly ReviewedOn { get; set; }
 }
