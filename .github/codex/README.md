@@ -180,6 +180,13 @@ the review and comment path. Manual dispatch runs keepalive, not a PR review.
 
 ## 5. Operation and recovery
 
+PR reviews run when a PR is opened, becomes ready for review, or its head is
+updated (`synchronize`). After initial eligibility, commit updates are the review
+trigger. Editing the title/body, adding or editing comments, and reopening a PR
+without a head update do not start another review. Updated PR claims and comments
+are read on the next triggered review. Scheduled/manual-dispatch keepalive runs
+only refresh authentication; they do not review a PR.
+
 The reviewer checks out the actual PR head SHA with full history, reads context
 without running builds or tests, and produces structured JSON. The workflow
 validates it, renders the Markdown comment with a score for each finding, and
