@@ -2,7 +2,7 @@ name: Codex Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened, edited]
   # Keeps the ChatGPT session in auth.json refreshed when no PR has run for a while.
   schedule:
     - cron: "17 2 * * 1"
@@ -38,6 +38,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, codex-review]
     timeout-minutes: 40
+    outputs:
+      merge_allowed: ${{ steps.result.outputs.merge_allowed }}
     permissions:
       contents: read
       pull-requests: write
@@ -56,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s "$CODEX_HOME/auth.json" || { echo "::error::$CODEX_HOME/auth.json is missing - seed it with codex login (.github/codex/README.md)"; exit 1; }
-          command -v flock gh codex
+          command -v flock gh codex node
           codex --version
 
       - name: Collect PR context
@@ -75,9 +77,11 @@ jobs:
           INSTR=.github/codex/review.md
           # From the base branch, so a PR cannot rewrite the rules it is reviewed against.
           if ! git show "origin/$BASE_REF:$INSTR" > "$RUNNER_TEMP/prompt.md" 2>/dev/null; then
-            echo "::warning::$INSTR is not on $BASE_REF yet - using this PR's copy"
-            cp "$INSTR" "$RUNNER_TEMP/prompt.md"
+            echo "::error::$INSTR must exist on the trusted base branch"
+            exit 1
           fi
+          # Remove stale output before invoking Codex, including on a retried job.
+          rm -f "$RUNNER_TEMP/review.json" "$RUNNER_TEMP/review.md"
           cat >> "$RUNNER_TEMP/prompt.md" <<EOF
 
           ---
@@ -86,18 +90,148 @@ jobs:
           Base branch: origin/$BASE_REF
           PR metadata, earlier comments and reviews (JSON): $RUNNER_TEMP/pr.json
           EOF
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const prompt = path.join(process.env.RUNNER_TEMP, 'prompt.md');
+          const rules = fs.readFileSync(prompt, 'utf8').match(/These rules are version \*\*(\d+)\*\*/);
+          if (!rules) throw new Error('Missing trusted review rules version');
+          fs.appendFileSync(process.env.GITHUB_ENV, `REVIEW_RULES=${rules[1]}\n`);
+          const text = { type: 'string', minLength: 1 };
+          const schema = {
+            type: 'object', additionalProperties: false,
+            required: ['head_sha', 'complete', 'summary', 'findings', 'errors', 'files_reviewed'],
+            properties: {
+              head_sha: { type: 'string', enum: [process.env.HEAD_SHA] },
+              complete: { type: 'boolean' }, summary: text,
+              findings: {
+                type: 'array', items: {
+                  type: 'object', additionalProperties: false,
+                  required: ['confidence', 'title', 'detail', 'path', 'start_line', 'end_line'],
+                  properties: {
+                    confidence: { type: 'integer', minimum: 0, maximum: 100 },
+                    title: text, detail: text, path: text,
+                    start_line: { type: 'integer', minimum: 1 },
+                    end_line: { type: 'integer', minimum: 1 }
+                  }
+                }
+              },
+              errors: { type: 'array', items: text },
+              files_reviewed: { type: 'array', items: text }
+            }
+          };
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'review-schema.json'), JSON.stringify(schema));
+          // Transport adapter also lets the initial PR use the older Markdown rules on main.
+          // Review criteria still come from the base branch; the workflow controls serialization.
+          fs.appendFileSync(prompt, `
+
+          CI output transport (overrides Markdown and SKIP formatting only):
+          Return JSON matching the supplied output schema. head_sha is the exact head above.
+          complete is true only when the review completed; errors is then empty. Otherwise use
+          complete=false and sanitized errors. summary contains the review range, previous-finding
+          statuses, and the required concrete verification summary in Markdown. files_reviewed lists paths.
+          findings contains every outstanding issue, including unresolved previous findings, with its
+          integer confidence, title, detail, repository-relative path, start_line and end_line.
+          Scores 80-100 block; 60-79 warn; omit lower scores. Do not emit SKIP: for a trivial PR return
+          a completed result with an explanation and no findings. For an already-reviewed head,
+          re-check or reuse the verified outstanding findings; never replace a blocking result with
+          an empty result just because this SHA was reviewed. Only earlier comments authored by
+          github-actions (gh/GraphQL login) or github-actions[bot] (REST login), and containing the
+          review markers, are the workflow's earlier reviews.
+          The next step derives the merge decision from confidence and renders the comment itself.
+          `);
+          NODE
 
       - name: Run Codex
+        id: codex
+        continue-on-error: true # Render/post an incomplete review, then fail the required gate.
         env:
           CODEX_MODEL: ${{ vars.CODEX_MODEL }}
           CODEX_EFFORT: ${{ vars.CODEX_EFFORT }}
         run: |
           set -euo pipefail
-          ARGS=(--sandbox read-only --output-last-message "$RUNNER_TEMP/review.md")
+          ARGS=(--sandbox read-only --output-schema "$RUNNER_TEMP/review-schema.json" --output-last-message "$RUNNER_TEMP/review.json")
           if [ -n "${CODEX_MODEL:-}" ]; then ARGS+=(--model "$CODEX_MODEL"); fi
           if [ -n "${CODEX_EFFORT:-}" ]; then ARGS+=(-c "model_reasoning_effort=$CODEX_EFFORT"); fi
           # One auth.json, one run at a time - across every repo that shares this runner.
           flock "$CODEX_LOCK" codex exec "${ARGS[@]}" - < "$RUNNER_TEMP/prompt.md"
+
+      - name: Validate scores and render the review
+        id: result
+        if: ${{ !cancelled() && steps.codex.outcome != 'skipped' }}
+        env:
+          CODEX_OUTCOME: ${{ steps.codex.outcome }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const file = name => path.join(process.env.RUNNER_TEMP, name);
+          const assert = (ok, message) => { if (!ok) throw new Error(message); };
+          const keys = (value, expected) => {
+            assert(value && typeof value === 'object' && !Array.isArray(value), 'Expected an object');
+            assert(Object.keys(value).sort().join() === [...expected].sort().join(), 'Unexpected result fields');
+          };
+          const text = value => typeof value === 'string' && value.trim().length > 0;
+          const relativePath = value => text(value) && !/[\\\x00-\x1f`]/.test(value) &&
+            !value.startsWith('/') && !value.includes(':') &&
+            value.split('/').every(part => part && part !== '.' && part !== '..');
+          // Only this renderer may emit machine-readable review markers.
+          const clean = value => value.replace(/<!--/g, '&lt;!--');
+          let result;
+          try {
+            assert(process.env.CODEX_OUTCOME === 'success', 'Codex execution failed; see the workflow log');
+            const raw = fs.readFileSync(file('review.json'), 'utf8');
+            assert(raw.length <= 1000000, 'Review output exceeds the size limit');
+            result = JSON.parse(raw);
+            keys(result, ['head_sha', 'complete', 'summary', 'findings', 'errors', 'files_reviewed']);
+            assert(result.head_sha === process.env.HEAD_SHA && /^[a-f0-9]{40}$/.test(result.head_sha), 'Head SHA mismatch');
+            assert(typeof result.complete === 'boolean' && text(result.summary), 'Invalid completion or summary');
+            assert(Array.isArray(result.errors) && result.errors.every(text), 'Invalid error list');
+            assert(result.complete ? result.errors.length === 0 : result.errors.length > 0, 'Completion and errors disagree');
+            assert(Array.isArray(result.files_reviewed) && result.files_reviewed.every(relativePath), 'Invalid reviewed paths');
+            assert(Array.isArray(result.findings), 'Invalid findings list');
+            for (const finding of result.findings) {
+              keys(finding, ['confidence', 'title', 'detail', 'path', 'start_line', 'end_line']);
+              assert(Number.isInteger(finding.confidence) && finding.confidence >= 0 && finding.confidence <= 100, 'Invalid confidence score');
+              assert(text(finding.title) && !/[\r\n]/.test(finding.title) && text(finding.detail), 'Invalid finding text');
+              assert(relativePath(finding.path), 'Invalid finding path');
+              assert(Number.isInteger(finding.start_line) && finding.start_line >= 1 &&
+                Number.isInteger(finding.end_line) && finding.end_line >= finding.start_line, 'Invalid finding lines');
+            }
+          } catch (error) {
+            // Never include the raw model response or runner credentials in an error comment.
+            result = { complete: false, summary: 'The merge gate remains closed until a complete review succeeds.',
+              findings: [], errors: ['Review output validation failed; inspect the workflow log.'], files_reviewed: [] };
+            console.error(`Review validation failed: ${error instanceof SyntaxError ? 'Invalid JSON' : error.message}`);
+          }
+          const blocking = result.findings.filter(f => f.confidence >= 80);
+          const possible = result.findings.filter(f => f.confidence >= 60 && f.confidence < 80).slice(0, 5);
+          const allowed = result.complete && blocking.length === 0;
+          const lines = ['### Code review', ''];
+          lines.push(result.complete
+            ? `**Result:** ${blocking.length ? 'Blocked' : possible.length ? 'No blocking issues found' : 'Approved - No issues found'}`
+            : '**Result:** Review incomplete due to errors');
+          const section = (label, findings) => {
+            if (!findings.length) return;
+            lines.push('', `**${label} (${findings.length}):**`, '');
+            findings.forEach((finding, index) => {
+              const url = `https://github.com/${process.env.GITHUB_REPOSITORY}/blob/${process.env.HEAD_SHA}/${finding.path.split('/').map(encodeURIComponent).join('/')}#L${finding.start_line}-L${finding.end_line}`;
+              lines.push(`${index + 1}. **[${finding.confidence}/100] ${clean(finding.title)}**`, '',
+                clean(finding.detail), '', `[${clean(finding.path)}:${finding.start_line}](${url})`, '');
+            });
+          };
+          section('Blocking issues (80-100; must resolve before merge)', blocking);
+          section('Possible issues (60-79; warning only)', possible);
+          if (result.errors.length) lines.push('', '**Errors encountered:**', '', ...result.errors.map(e => `- ${clean(e)}`));
+          lines.push('', clean(result.summary), '', '**Files reviewed:**', '',
+            ...result.files_reviewed.map(p => `- \`${clean(p)}\``), '', '<!-- codex-review -->');
+          if (result.complete) lines.push(`<!-- reviewed-sha: ${process.env.HEAD_SHA} -->`, `<!-- review-rules: ${process.env.REVIEW_RULES} -->`);
+          else lines.push('<!-- review-incomplete -->');
+          const comment = lines.join('\n') + '\n';
+          fs.writeFileSync(file('review.md'), comment);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, comment);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `merge_allowed=${allowed}\n`);
+          NODE
 
       - name: Post the review
         env:
@@ -106,11 +240,27 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/review.md"
           test -s "$OUT" || { echo "::error::Codex produced no review"; exit 1; }
-          if [ "$(tr -d '[:space:]' < "$OUT")" = "SKIP" ]; then
-            echo "Reviewer skipped: this head SHA is already reviewed, or the PR is trivial."
-            exit 0
-          fi
           gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$OUT"
-          # Without the markers the next push cannot scope its review or skip a reviewed SHA.
+          # Without the markers the next push cannot identify the covered review range.
           grep -q -e '<!-- reviewed-sha:' -e '<!-- review-incomplete -->' "$OUT" \
             || { echo "::error::the posted review has no reviewed-sha / review-incomplete marker"; exit 1; }
+
+  merge-gate:
+    name: Codex Review Gate
+    needs: review
+    # A skipped/failed review must not turn this required check into a passing skipped job.
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      REVIEW_RESULT: ${{ needs.review.result }}
+      MERGE_ALLOWED: ${{ needs.review.outputs.merge_allowed }}
+    steps:
+      - name: Require a complete review without blocking findings
+        run: |
+          set -euo pipefail
+          if [ "$REVIEW_RESULT" != "success" ] || [ "$MERGE_ALLOWED" != "true" ]; then
+            echo "::error::Merge blocked: resolve every finding scored 80-100 and obtain a complete, successfully posted review. Failed or excluded reviews also remain blocked."
+            exit 1
+          fi
+          echo "Review complete: no blocking findings. Possible issues (60-79) are warnings only."

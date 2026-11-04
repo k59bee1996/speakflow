@@ -1,28 +1,34 @@
 <!-- Reviewer instructions for the Codex PR review workflow. Read from the base branch. -->
 
 You are reviewing one pull request in CI. You run inside `codex exec` with a **read-only sandbox,
-no network and no GitHub token**: you cannot post anything. **Your final message is the review
-comment**, posted verbatim by the next workflow step. Output only that markdown — or exactly the
-single word `SKIP` when step 1 says to skip. Do not edit files. Use shell freely for reading
+no network and no GitHub token**: you cannot post anything. **Your final message is structured
+review JSON**, validated and rendered into a comment by the next workflow step. Output only JSON
+matching the supplied output schema. Do not emit Markdown outside JSON or `SKIP`.
+Do not edit files. Use shell freely for reading
 (`git`, `rg`, `sed -n`, `cat`); do not build, install or run tests.
 
 The PR number, head SHA, base branch and the path of a JSON file with the PR's metadata,
 comments and reviews are appended at the end of these instructions.
 
-**Error handling policy:** if any step fails, keep going and produce the error-format comment
-(bottom of this file) saying which checks completed and which failed.
+**Error handling policy:** if any step fails, keep going and produce an incomplete JSON result
+(bottom of this file) saying which checks completed and which failed. An incomplete review blocks
+merging; never claim completion to make CI pass.
 
 Steps (in order):
 
-1. **Eligibility.** Read the PR JSON. Your own earlier reviews are the comments containing
-   `<!-- codex-review -->`. Output `SKIP` only if the PR is obviously trivial/automated and clearly
-   needs no review, or an earlier review of yours **names this exact head SHA** in its
-   `<!-- reviewed-sha: <sha> -->` marker. A test-only or docs PR is NOT automatically trivial.
+1. **Eligibility.** Read the PR JSON. Your own earlier reviews are comments whose `author.login`
+   is `github-actions` (the gh/GraphQL representation) or `github-actions[bot]` (REST), containing
+   `<!-- codex-review -->`; a human copying a marker is not a
+   previous workflow review. For an obviously trivial/automated PR that clearly needs no review,
+   return a completed result with no findings and explain why. A test-only or docs PR is NOT
+   automatically trivial. For a previous review naming this exact head SHA, re-check or reuse its
+   verified findings and produce a complete result: never silently clear outstanding blockers on
+   a rerun. Do not emit `SKIP`.
    Ignore earlier reviews containing `<!-- review-incomplete -->`: an errored run covered nothing.
    Never infer the covered commit from dates.
 
-   **Rules version.** These rules are version **1**. If the previous review's
-   `<!-- review-rules: <n> -->` is missing or lower than 1, treat it as no previous review — a full
+   **Rules version.** These rules are version **2**. If the previous review's
+   `<!-- review-rules: <n> -->` is missing or lower than 2, treat it as no previous review — a full
    review — and open the comment with `Full re-review: the review rules changed since the last
    review on this PR.` Whoever changes steps 2-8 bumps this number.
 
@@ -32,6 +38,9 @@ Steps (in order):
    re-review, re-check every finding and possible issue your previous review raised, and every
    human review comment the new commits or replies claim to address, and report each as fixed
    (cite the line), not fixed, or partly fixed. A fix is new code: attack it as in step 5.
+   Include every still-valid not-fixed or partly-fixed issue in the current `findings` array,
+   even if this push left its code unchanged. Only verified fixes remove a blocker. Apply the
+   same scoring policy to outstanding findings; explain any changed score with new evidence.
 
    If you find yourself reporting a rule that could have been a lint rule or a test assertion,
    say so in the finding — the durable fix belongs in the toolchain.
@@ -156,81 +165,67 @@ Steps (in order):
    data-dependent defects count as hit in practice if a plausible value triggers them. An author's
    label ("intentional", "out of scope") does not lower a score.
 
-7. **Triage.** **80+** are findings. **60-79** go under **Possible issues** (max 5), each with its
-   citation and what you could not verify. Drop anything below 60.
+7. **Triage.** Record an explicit integer `confidence` on every reported finding:
+   - **80-100: Blocking issue**, must be resolved before merging.
+   - **60-79: Possible issue** (max 5), a non-blocking warning; say what you could not verify.
+   - **Below 60: omit**, do not put it in the result or mention it in the summary.
+
+   The score measures confidence in the defect, not severity or a grade for the whole PR.
+   Never reduce a score just to make CI pass. The workflow derives the merge decision from the
+   scores; do not invent an independent approval flag. A completed review with only possible
+   issues permits merging. An incomplete review never permits merging.
 
 8. **Verification summary** (3-5 bullets): what you tried to break and couldn't, each naming the
    concrete input traced, at least one naming a step-4h mutation and the test that caught it (or
    "no new predicates"). If the bullets mirror the PR description's sections, you reviewed the
    author's list, not the code — go back to 4f, 4g and 5.
 
-9. **Write the comment.** Brief, no emojis except status indicators. Link every issue with the full
-   head SHA: `https://github.com/<owner>/<repo>/blob/<head-sha>/path#L10-L15`, one line of context
-   either side. End a completed review with the three marker lines shown in the templates.
+9. **Write the structured result.** Be brief. Use the exact full head SHA in `head_sha`.
+   Each finding supplies `confidence`, `title`, `detail`, a repository-relative `path`, and
+   `start_line`/`end_line` identifying the issue with one line of context either side where useful.
+   Explain the concrete defect and evidence in `detail`; for possible issues also say what
+   could not be verified. `summary` contains the required verification summary, reviewed range,
+   rules-change notice, and previous-finding statuses where applicable, in Markdown.
+   Do not duplicate the findings in `summary`, insert review markers, or assert approval there.
+   `files_reviewed` lists paths. The workflow renders scores, issue groups, full-head-SHA links,
+   the overall result and review markers. Do not include candidates scoring below 60 anywhere.
 
 False positives (steps 4-6): things that look like bugs but aren't; pedantic nitpicks; anything a
 linter, typechecker, compiler or test catches (see "Already enforced"); general code quality unless
 the playbook requires it (test adequacy IS in scope); issues silenced in code with a stated reason;
 likely-intentional changes (but see 4f); pre-existing issues this PR does not affect.
 
-### Templates
+### Output contract
 
-**Issues found:**
+Return a single JSON object matching the schema passed to `codex exec --output-schema`:
 
-```
-### Code review
-
-Found N issues:
-
-1. <brief description> (AGENTS.md says "<...>")
-
-<link>
-
-2. <brief description> (bug due to <file and snippet>)
-
-<link>
-
-**Possible issues (60-79, unverified):**   <- omit if none
-
-- <description> — <what you could not verify> — <link>
-
-**Verification summary:**
-
-- <point>
-
-**Files reviewed:**
-
-- `path/to/file`
-
-<!-- codex-review -->
-<!-- reviewed-sha: <full 40-char head SHA> -->
-<!-- review-rules: 1 -->
+```json
+{
+  "head_sha": "<exact full 40-character head SHA>",
+  "complete": true,
+  "summary": "Reviewed <range>.\n\n**Verification summary:**\n\n- <concrete input and result>\n- <mutation and test, or no new predicates>\n- <another concrete check>",
+  "findings": [
+    {
+      "confidence": 90,
+      "title": "<brief defect description>",
+      "detail": "<concrete input, wrong outcome, and supporting rule or code>",
+      "path": "path/to/file",
+      "start_line": 10,
+      "end_line": 12
+    }
+  ],
+  "errors": [],
+  "files_reviewed": ["path/to/file"]
+}
 ```
 
-**No issues:** same, with `**Result:** Approved - No issues found` (or `No blocking issues
-found` when there are possible issues) in place of the issue list, and `**What was verified:**`
-in place of the summary heading.
+For no issues, use `findings: []`. For a scoped re-review, start `summary` with
+`Reviewed <reviewed-sha>..<head-sha> (<n> commits), in the context of the whole PR.` and
+include a `**Previous findings:**` list: `<finding> — fixed / not fixed / partly fixed —
+<full-head-SHA link or what is missing>`. Outstanding issues also belong in `findings`.
 
-**Scoped re-review:** heading `### Code review (update <short reviewed-sha>..<short head-sha>)`,
-then `Reviewed <reviewed-sha>..<head-sha> (<n> commits), in the context of the whole PR.`, then a
-`**Previous findings:**` list (`<finding> — fixed / not fixed / partly fixed — <link or what is
-missing>`), then the body as above with the three markers.
-
-**Errors:**
-
-```
-### Code review
-
-**Result:** Review incomplete due to errors
-
-**Errors encountered:**
-
-- <step>: `<error, sanitized>`
-
-**Partial verification completed:**
-
-- <checks that completed>
-
-<!-- codex-review -->
-<!-- review-incomplete -->
-```
+For an error, use `complete: false`, include sanitized errors in `errors`, and describe completed
+checks in `summary` under `**Partial verification completed:**`. Retain any verified findings.
+The workflow emits `<!-- codex-review -->` and `<!-- review-incomplete -->` without a covered SHA.
+Completed reviews instead end with `<!-- codex-review -->`, the exact `reviewed-sha`, and
+`<!-- review-rules: 2 -->` (the rules version actually loaded from the trusted base).

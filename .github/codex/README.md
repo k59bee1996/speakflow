@@ -5,7 +5,8 @@ persistent self-hosted Linux runner. It does not use an OpenAI API key or
 `openai/codex-action`.
 
 Repository: `k59bee1996/speakflow`. Default branch: `main`.
-Use this setup for private repositories only.
+This repository is public. Only trusted, same-repository, human-authored PRs may
+execute on the persistent runner; fork and Bot-authored PRs remain excluded.
 
 ## 1. Prepare the runner
 
@@ -35,6 +36,8 @@ and `jq` for the setup check. Install an exact, tested Codex CLI version:
 npm i -g @openai/codex@X.Y.Z
 codex --version
 command -v gh flock git bash jq
+node --version
+codex exec --help # Must support --output-schema and --output-last-message.
 ```
 
 Pin the Codex version and upgrade deliberately. Ensure these commands are on
@@ -144,11 +147,15 @@ Review and merge these three files into `main`:
 Keep `AGENTS.md` committed. It already exists in this repository and is tracked.
 The reviewer also reads the applicable frontend, backend and lesson rules.
 
-The workflow reads review.md from each PR's base branch. Its bootstrap fallback
-uses the PR's copy only when the base has no review.md; that initial fallback is
-not protected by base-branch instructions. Establish and inspect the rules on
-`main` before relying on automated reviews. Other PR base branches need the rules
-file too.
+The workflow reads review.md only from each PR's base branch and fails if that
+trusted file is missing. Establish and inspect the rules on `main` before relying
+on automated reviews. Other PR base branches need the rules file too.
+
+The workflow supplies a JSON schema and a transport adapter, so the first upgrade
+PR can still use the older Markdown-oriented rules already on `main`. This adapter
+requires the scores those rules already define; it does not replace the base
+branch's review criteria. Markers record the rules version actually loaded. Once
+version 2 is merged, previous version-1 reviews trigger a full re-review.
 
 In repository Settings → Secrets and variables → Actions → Variables, optionally set:
 
@@ -174,8 +181,11 @@ the review and comment path. Manual dispatch runs keepalive, not a PR review.
 ## 5. Operation and recovery
 
 The reviewer checks out the actual PR head SHA with full history, reads context
-without running builds or tests, and produces a Markdown comment. The following
-step posts that comment. Drafts, Bot-authored PRs and fork PRs are excluded.
+without running builds or tests, and produces structured JSON. The workflow
+validates it, renders the Markdown comment with a score for each finding, and
+posts the comment. Drafts, Bot-authored PRs and fork PRs are excluded from execution
+on the persistent runner. Excluded reviews do not satisfy the merge gate; use a
+trusted, human-authored same-repository PR when an automated review is required.
 
 The read-only sandbox restricts reviewer shell access and network use. The Codex
 client itself still needs outbound connectivity to OpenAI for inference and
@@ -197,8 +207,48 @@ shared with that account's interactive usage.
 If steps 2-8 of review.md change, increment its rules version and update the
 review-rules markers and comparison threshold together.
 
+## 6. Required merge gate on main
+
+Commenting alone does not block a merge. The workflow also emits the separate
+GitHub Actions check **Codex Review Gate**, which must be required by branch
+protection for `main`.
+
+| Confidence of an outstanding finding | Comment | Merge gate |
+| --- | --- | --- |
+| 80-100, including exactly 80 | Blocking issue, with its score and source link | Fails; fix every blocker and push the fix for re-review |
+| 60-79 | Possible issue, warning only, with its score and uncertainty | Passes when the review is complete and there are no blockers |
+| 0-59 | Omitted | Does not affect the result |
+
+Scores express confidence in a defect, not a severity level or a grade for the PR.
+All outstanding blockers count, including earlier findings not fixed by a later
+push. Rerunning an already-reviewed SHA rechecks or retains its findings; it cannot
+clear blockers by returning SKIP. Neither editing a comment nor resolving a
+conversation changes the required check. Push the fix and let the reviewer verify it.
+
+Invalid JSON/scores, an incomplete or failed Codex run, failure to post the comment,
+and excluded or cancelled reviews keep the gate closed. A runner that is offline
+leaves the required review waiting. Restore the runner and rerun the workflow;
+do not replace a failed review with an unconditional success.
+
+In Settings → Branches → protection for `main`, configure:
+
+- Require a pull request before merging (zero required human approvals is sufficient
+  for this bot gate).
+- Require status checks before merging: **Codex Review Gate**, source **GitHub Actions**.
+- Apply protection to administrators / do not allow bypassing, so the repo owner
+  cannot merge a PR while the bot's gate is failing.
+- Preserve any existing required checks and other protections.
+
+GitHub must see the check on a PR before it appears in the UI selector. The upgrade
+PR can run the new workflow against the existing base rules using the transport
+adapter above. Require the gate once this check is registered; merge the upgrade
+PR only after it passes. The upgraded rules take effect from `main` after merging.
+Public repositories can use required status checks on GitHub Free; making a job
+fail without requiring its check is insufficient.
+
 References:
 
 - [OpenAI: Maintain Codex account auth in CI/CD](https://learn.chatgpt.com/docs/auth/ci-cd-auth)
 - [OpenAI: Web search configuration](https://learn.chatgpt.com/docs/web-search)
 - [GitHub CLI credential-helper setup](https://cli.github.com/manual/gh_auth_setup-git)
+- [GitHub required status checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
