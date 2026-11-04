@@ -22,6 +22,7 @@ public sealed class SpeakflowDbContextModelTests
         AssertUserOwnedEntity<Review>(context);
         AssertUserOwnedEntity<Note>(context);
         AssertUserOwnedEntity<AiRequestLog>(context);
+        AssertUserOwnedEntity<UserSession>(context);
     }
 
     [TestMethod]

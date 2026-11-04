@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "./AppContext";
 import { NEW_PER_DAY } from "@/lib/content";
-import { addDays, todayISO, viDate } from "@/lib/dates";
-import { loadQueue } from "@/lib/queue";
+import { viDate } from "@/lib/dates";
+import { api } from "@/lib/backend/client";
 import { GRADE_LABELS, intervalLabel, matchScore, plan, type Grade } from "@/lib/srs";
 import { getRecognition, speak } from "@/lib/speech";
 import type { Card } from "@/lib/types";
 
 export default function CardsView() {
-  const { sb, userId, refreshDue, setError } = useApp();
+  const { refreshDue, setError } = useApp();
   const [queue, setQueue] = useState<Card[] | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [heard, setHeard] = useState<{ text: string; error?: boolean } | null>(null);
@@ -23,21 +23,11 @@ export default function CardsView() {
   const [canListen, setCanListen] = useState(false);
   const busy = useRef(false);
 
-  const loadAll = useCallback(async () => {
-    const r = await sb.from("cards").select("*").order("created_at", { ascending: false });
-    if (!r.error) setAll(r.data as Card[]);
-  }, [sb]);
-
   useEffect(() => {
-    setCanListen(!!getRecognition());
-    loadQueue(sb)
-      .then(setQueue)
-      .catch(() => {
-        setQueue([]);
-        setError("Không tải được thẻ. Thử tải lại trang.");
-      });
-    loadAll();
-  }, [sb, loadAll, setError]);
+    Promise.all([api.queue(), api.cards()]).then(([queue, cards]) => {
+      setCanListen(!!getRecognition()); setQueue(queue); setAll(cards);
+    }).catch(e => { setQueue([]); setError(e instanceof Error ? e.message : "Không tải được thẻ."); });
+  }, [setError]);
 
   const cur = queue && queue.length ? queue[0] : null;
   const curId = useRef<string | null>(null);
@@ -48,30 +38,14 @@ export default function CardsView() {
   async function grade(g: Grade) {
     if (!cur || busy.current) return;
     busy.current = true;
-    const today = todayISO();
-    const p = plan(cur, g);
-    const updated: Card = {
-      ...cur,
-      ...p,
-      due: g === 0 ? today : addDays(today, p.interval_days),
-      lapses: cur.lapses + (g === 0 ? 1 : 0),
-      is_new: false,
-    };
-    setQueue((q) => (q ? (g === 0 ? [...q.slice(1), updated] : q.slice(1)) : q));
-    setFlipped(false);
-    setHeard(null);
-    setReviewed((n) => n + 1);
-
-    const [u, r] = await Promise.all([
-      sb
-        .from("cards")
-        .update({ interval_days: updated.interval_days, ease: updated.ease, reps: updated.reps, due: updated.due, lapses: updated.lapses, is_new: false })
-        .eq("id", cur.id),
-      sb.from("reviews").insert({ user_id: userId, card_id: cur.id, grade: g, was_new: cur.is_new }),
-    ]);
-    if (u.error || r.error) setError("Không lưu được kết quả ôn thẻ. Kiểm tra kết nối.");
-    busy.current = false;
-    refreshDue();
+    try {
+      const updated = await api.grade(cur, g);
+      setQueue(q => q ? (g === 0 ? [...q.filter(c => c.id !== cur.id), updated] : q.filter(c => c.id !== cur.id)) : q);
+      setAll(cards => cards.map(c => c.id === cur.id ? updated : c));
+      setFlipped(false); setHeard(null); setReviewed(n => n + 1);
+      await refreshDue();
+    } catch (e) { setError(e instanceof Error ? e.message : "Không lưu được kết quả ôn thẻ."); }
+    finally { busy.current = false; }
   }
 
   function listen() {
@@ -109,85 +83,71 @@ export default function CardsView() {
       setFormMsg({ text: "Điền cả hai mặt thẻ.", error: true });
       return;
     }
-    const r = await sb
-      .from("cards")
-      .insert({ user_id: userId, front: f, back: b, week: 0, is_new: false, due: todayISO() })
-      .select("*")
-      .single();
-    if (r.error) {
-      setFormMsg({ text: "Chưa thêm được thẻ. Thử lại sau.", error: true });
-      return;
-    }
-    const card = r.data as Card;
-    setQueue((q) => (q ? [...q, card] : [card]));
-    setAll((a) => [card, ...a]);
-    setFront("");
-    setBack("");
-    setFormMsg({ text: "Đã thêm." });
-    refreshDue();
+    try {
+      const card = await api.addCard(f, b);
+      setQueue(q => [...(q ?? []), card]); setAll(a => [card, ...a]);
+      setFront(""); setBack(""); setFormMsg({ text: "Đã thêm." });
+      await refreshDue();
+    } catch (e) { setFormMsg({ text: e instanceof Error ? e.message : "Chưa thêm được thẻ.", error: true }); }
   }
-
   async function removeCard(id: string) {
-    const r = await sb.from("cards").delete().eq("id", id);
-    if (r.error) {
-      setError("Không xoá được thẻ.");
-      return;
-    }
-    setAll((a) => a.filter((c) => c.id !== id));
-    setQueue((q) => (q ? q.filter((c) => c.id !== id) : q));
-    refreshDue();
+    try {
+      await api.deleteCard(id);
+      setAll(a => a.filter(c => c.id !== id)); setQueue(q => q ? q.filter(c => c.id !== id) : q);
+      await refreshDue();
+    } catch (e) { setError(e instanceof Error ? e.message : "Không xoá được thẻ."); }
   }
 
   return (
     <>
-      <h1>Ôn thẻ</h1>
+      <h1 className="font-token-display text-token-title">Ôn thẻ</h1>
 
       {queue === null ? (
-        <p className="muted">Đang tải thẻ…</p>
+        <p className="text-token-text-muted">Đang tải thẻ…</p>
       ) : !cur ? (
         <>
-          <p className="done-msg">{reviewed ? `Xong! Hôm nay bạn đã ôn ${reviewed} thẻ.` : "Hôm nay không còn thẻ nào đến hạn."}</p>
-          <p className="muted small">
-            Thẻ mới mở theo chủ đề mỗi tuần, tối đa {NEW_PER_DAY} thẻ mới một ngày. Ý nào bí khi nói, hãy ghi vào sổ câu bí để thành thẻ.
+          <p className="my-space-4 font-semibold">{reviewed ? `Xong! Hôm nay bạn đã ôn ${reviewed} thẻ.` : "Hôm nay không còn thẻ nào đến hạn."}</p>
+          <p className="text-token-small text-token-text-muted">
+            Mỗi ngày bạn học tối đa {NEW_PER_DAY} thẻ mới. Ý nào bí khi nói, hãy ghi vào sổ câu bí để thành thẻ.
           </p>
         </>
       ) : (
         <>
-          <div className="flash">
-            <div className="meta">
+          <div className="my-space-4 rounded-token-hero border border-solid border-token-border bg-token-surface p-space-5">
+            <div className="flex justify-between gap-space-2 text-token-small text-token-text-muted">
               <span>{cur.is_new ? "Thẻ mới" : cur.lapses ? `Ôn lại, đã quên ${cur.lapses} lần` : "Ôn lại"}</span>
               <span>{cur.week ? `Tuần ${cur.week}` : "Thẻ của bạn"}</span>
             </div>
-            <div className="front">{cur.front}</div>
+            <div className="my-space-4 text-token-practice font-semibold">{cur.front}</div>
 
             {!flipped ? (
               <>
-                <p className="muted small">Nói to câu tiếng Anh trước, rồi mới lật thẻ.</p>
-                <div className="row" style={{ marginTop: 16 }}>
-                  <button className="btn" type="button" onClick={() => setFlipped(true)}>Lật thẻ</button>
+                <p className="text-token-small text-token-text-muted">Nói to câu tiếng Anh trước, rồi mới lật thẻ.</p>
+                <div className="my-space-3 flex flex-wrap items-center gap-space-3">
+                  <button className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-cta cursor-pointer rounded-token-card border-0 bg-token-primary px-space-4 py-space-3 text-token-on-primary disabled:opacity-50" type="button" onClick={() => setFlipped(true)}>Lật thẻ</button>
                   {canListen && (
-                    <button className="btn ghost" type="button" onClick={listen} disabled={listening}>
+                    <button className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer rounded-token-pill border border-solid border-token-border bg-token-surface px-space-4 py-space-2 text-token-small text-token-primary disabled:opacity-50" type="button" onClick={listen} disabled={listening}>
                       {listening ? "Đang nghe…" : "Nói thử"}
                     </button>
                   )}
                 </div>
-                {heard?.error && <div className="heard err">{heard.text}</div>}
+                {heard?.error && <div className="my-space-3 text-token-small text-token-danger">{heard.text}</div>}
               </>
             ) : (
               <>
-                <div className="back">{cur.back}</div>
-                {cur.note && <p className="cnote">{cur.note}</p>}
+                <div lang="en" className="my-space-4 border-t border-dashed border-token-border pt-space-4 font-token-display text-token-practice text-token-primary">{cur.back}</div>
+                {cur.note && <p className="my-space-2 text-token-small text-token-text-muted">{cur.note}</p>}
                 {heard && !heard.error && (
-                  <div className="heard">
+                  <div className="my-space-3 rounded-token-input bg-token-surface-muted p-space-3 text-token-small">
                     Bạn nói: “{heard.text}”, khớp {matchScore(heard.text, cur.back)}%
                   </div>
                 )}
-                <div className="row" style={{ marginTop: 12 }}>
-                  <button className="btn sm ghost" type="button" onClick={() => speak(cur.back)}>Nghe phát âm</button>
+                <div className="my-space-3 flex flex-wrap items-center gap-space-3">
+                  <button className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer rounded-token-pill border border-solid border-token-border bg-token-surface px-space-4 py-space-2 text-token-small text-token-primary disabled:opacity-50" type="button" onClick={() => speak(cur.back)}>Nghe phát âm</button>
                 </div>
-                <div className="grades">
+                <div className="mt-space-5 grid grid-cols-4 gap-space-2">
                   {GRADE_LABELS.map((label, g) => (
-                    <button key={label} type="button" className={g === 0 ? "forgot" : undefined} onClick={() => grade(g as Grade)}>
+                    <button key={label} type="button" className={"flex min-h-cta flex-col items-center justify-center rounded-token-control border border-solid border-token-border bg-token-bg p-space-2 text-token-small " + (g === 0 ? "text-token-danger" : "text-token-text")} onClick={() => grade(g as Grade)}>
                       <b>{label}</b>
                       <span>{intervalLabel(plan(cur, g as Grade).interval_days)}</span>
                     </button>
@@ -196,41 +156,41 @@ export default function CardsView() {
               </>
             )}
           </div>
-          <p className="left">Còn {queue.length - 1} thẻ trong lượt này.</p>
+          <p className="my-space-3 text-token-small text-token-text-muted">Còn {queue.length - 1} thẻ trong lượt này.</p>
         </>
       )}
 
-      <details className="list">
-        <summary>Thêm thẻ của riêng bạn</summary>
-        <div className="items">
-          <div className="field">
+      <details className="mt-space-6 rounded-token-card border border-solid border-token-border bg-token-surface">
+        <summary className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer px-space-4 py-space-3 font-medium">Thêm thẻ của riêng bạn</summary>
+        <div className="flex flex-col gap-space-3 p-space-4">
+          <div className="my-space-3 flex flex-col gap-space-2">
             <label htmlFor="nc-front">Mặt trước (tiếng Việt)</label>
-            <input id="nc-front" type="text" value={front} onChange={(e) => { setFront(e.target.value); setFormMsg(null); }} placeholder="Tôi sẽ gửi email cho anh trước 5 giờ" />
+            <input className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] w-full min-w-0 min-h-touch rounded-token-input border border-solid border-token-border bg-token-surface px-space-3 py-space-3 text-token-text" id="nc-front" type="text" value={front} onChange={(e) => { setFront(e.target.value); setFormMsg(null); }} placeholder="Tôi sẽ gửi email cho anh trước 5 giờ" />
           </div>
-          <div className="field">
+          <div className="my-space-3 flex flex-col gap-space-2">
             <label htmlFor="nc-back">Mặt sau (tiếng Anh)</label>
-            <input id="nc-back" type="text" value={back} onChange={(e) => { setBack(e.target.value); setFormMsg(null); }} placeholder="I’ll email you before 5." />
+            <input className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] w-full min-w-0 min-h-touch rounded-token-input border border-solid border-token-border bg-token-surface px-space-3 py-space-3 text-token-text" id="nc-back" type="text" value={back} onChange={(e) => { setBack(e.target.value); setFormMsg(null); }} placeholder="I’ll email you before 5." />
           </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn sm" type="button" onClick={addCard}>Thêm thẻ</button>
-            {formMsg && <span className={`status${formMsg.error ? " err" : ""}`}>{formMsg.text}</span>}
+          <div className="my-space-3 flex flex-wrap items-center gap-space-3">
+            <button className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer rounded-token-pill border border-solid border-token-border bg-token-surface px-space-4 py-space-2 text-token-small text-token-primary disabled:opacity-50" type="button" onClick={addCard}>Thêm thẻ</button>
+            {formMsg && <span className={formMsg.error ? "text-token-small text-token-danger" : "text-token-small text-token-success"}>{formMsg.text}</span>}
           </div>
         </div>
       </details>
 
-      <details className="list">
-        <summary>Tất cả thẻ ({all.length})</summary>
-        <div className="items">
+      <details className="mt-space-6 rounded-token-card border border-solid border-token-border bg-token-surface">
+        <summary className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch cursor-pointer px-space-4 py-space-3 font-medium">Tất cả thẻ ({all.length})</summary>
+        <div className="flex flex-col gap-space-3 p-space-4">
           {all.map((c) => (
-            <div className="item" key={c.id}>
-              <div>
+            <div className="flex items-start justify-between gap-space-3 border-t border-solid border-token-border py-space-3" key={c.id}>
+              <div className="min-w-0">
                 {c.front}
-                <span>
-                  {c.back}
+                <span lang="en" className="block font-token-display">{c.back}</span>
+                <span className="block text-token-small text-token-text-muted">
                   {c.is_new ? ", chưa học" : `, ôn lại ${viDate(c.due)}`}
                 </span>
               </div>
-              <button className="x" type="button" onClick={() => removeCard(c.id)} aria-label={`Xoá thẻ ${c.front}`}>
+              <button className="focus-visible:[outline:var(--focus-ring)] focus-visible:[outline-offset:var(--focus-offset)] min-h-touch shrink-0 cursor-pointer border-0 bg-transparent px-space-2 text-token-small text-token-text-muted" type="button" onClick={() => removeCard(c.id)} aria-label={`Xoá thẻ ${c.front}`}>
                 Xoá
               </button>
             </div>
