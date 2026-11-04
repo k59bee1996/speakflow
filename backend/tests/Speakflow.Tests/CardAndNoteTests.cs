@@ -75,8 +75,9 @@ public sealed class CardAndNoteTests
         note = await Json(await client.PostAsync($"/api/notes/{id}/suggest", null)); Assert.AreEqual(2, note.GetProperty("options").GetArrayLength());
         note = await Json(await client.PostAsJsonAsync($"/api/notes/{id}/options", new { en = "My own phrasing." }));
         Assert.AreEqual("Bạn tự nhập", note.GetProperty("options")[2].GetProperty("note").GetString());
-        await Json(await client.PostAsJsonAsync($"/api/notes/{id}/cards", new { index = 2, today }));
-        await Json(await client.PostAsJsonAsync($"/api/notes/{id}/cards", new { index = 2, today }));
+        var optionsVersion = note.GetProperty("options_version").GetString();
+        await Json(await client.PostAsJsonAsync($"/api/notes/{id}/cards", new { index = 2, today, options_version = optionsVersion }));
+        await Json(await client.PostAsJsonAsync($"/api/notes/{id}/cards", new { index = 2, today, options_version = optionsVersion }));
         var cards = await Json(await client.GetAsync("/api/cards")); Assert.AreEqual(1, cards.GetArrayLength());
         note = await Json(await client.PostAsJsonAsync($"/api/notes/{id}/options", new { en = "Another version." }));
         Assert.AreEqual(3, note.GetProperty("options").GetArrayLength()); Assert.AreEqual(1, note.GetProperty("carded")[0].GetInt32());
@@ -98,12 +99,14 @@ public sealed class CardAndNoteTests
         db.Notes.AddRange(new Note { Id = Guid.NewGuid(), UserId = factory.UserA, Vi = "a" }, new Note { Id = Guid.NewGuid(), UserId = factory.UserB, Vi = "b" });
         foreach (var p in await db.Profiles.ToListAsync()) p.Mode = "60";
         await db.SaveChangesAsync();
-        Assert.AreEqual(HttpStatusCode.NoContent, (await a.DeleteAsync("/api/data")).StatusCode);
+        var today = DateOnly.FromDateTime(factory.Clock.Now.UtcDateTime);
+        Assert.AreEqual(HttpStatusCode.NoContent, (await a.DeleteAsync($"/api/data?today={today:yyyy-MM-dd}")).StatusCode);
         db.ChangeTracker.Clear();
         Assert.AreEqual(0, await db.Cards.IgnoreQueryFilters().CountAsync(c => c.UserId == factory.UserA));
         Assert.AreEqual(1, await db.Cards.CountAsync(c => c.UserId == factory.UserB));
         Assert.AreEqual(1, await db.Notes.CountAsync());
         Assert.AreEqual("30", (await db.Profiles.SingleAsync(p => p.UserId == factory.UserA)).Mode);
+        Assert.AreEqual(today, (await db.Profiles.SingleAsync(p => p.UserId == factory.UserA)).StartDate);
         Assert.AreEqual("60", (await db.Profiles.SingleAsync(p => p.UserId == factory.UserB)).Mode);
         Assert.AreEqual(HttpStatusCode.OK, (await a.GetAsync("/api/auth/session")).StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, (await b.GetAsync("/api/auth/session")).StatusCode);
@@ -121,7 +124,8 @@ public sealed class CardAndNoteTests
         db.AiRequests.AddRange(Enumerable.Range(0, 49).Select(_ => new AiRequestLog { UserId = factory.UserA, CreatedAt = factory.Clock.Now }));
         await db.SaveChangesAsync();
         Assert.AreEqual(HttpStatusCode.TooManyRequests, (await client.PostAsync($"/api/notes/{id}/suggest", null)).StatusCode); Assert.AreEqual(1, factory.Ai.Calls);
-        Assert.AreEqual(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/data")).StatusCode);
+        var today = DateOnly.FromDateTime(factory.Clock.Now.UtcDateTime);
+        Assert.AreEqual(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/data?today={today:yyyy-MM-dd}")).StatusCode);
         Assert.AreEqual(50, await db.AiRequests.CountAsync());
     }
 }

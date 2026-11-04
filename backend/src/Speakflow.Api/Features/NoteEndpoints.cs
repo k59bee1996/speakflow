@@ -9,7 +9,7 @@ public static class NoteEndpoints
 {
     public sealed record NewNote(string? Vi);
     public sealed record ManualOption(string? En);
-    public sealed record OptionCard(int Index, DateOnly Today);
+    public sealed record OptionCard(int Index, DateOnly Today, string? OptionsVersion);
 
     public static void MapNoteEndpoints(this WebApplication app)
     {
@@ -68,6 +68,9 @@ public static class NoteEndpoints
                 await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
                 var note = await db.Notes.SingleOrDefaultAsync(n => n.Id == id && n.UserId == uid, ct);
                 if (note is null) return ApiData.Missing();
+                // The selected index is meaningful only for the exact options the caller saw.
+                if (!string.Equals(input.OptionsVersion, ApiData.OptionsVersion(note), StringComparison.Ordinal))
+                    return Results.Problem(statusCode: 409, detail: "Các cách nói đã thay đổi. Bạn hãy tải lại trang và chọn lại cách nói.");
                 var options = ApiData.ToDto(note).Options;
                 if (input.Index < 0 || input.Index >= options.Length) return ApiData.Invalid("Cách nói không hợp lệ.");
                 if (!note.Carded.Contains(input.Index))

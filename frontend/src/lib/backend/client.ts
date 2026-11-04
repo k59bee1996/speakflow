@@ -25,7 +25,7 @@ export const api = {
   logout: () => request<void>("auth/logout", "POST"),
   profile: () => request<Profile>("profile"),
   updateProfile: (profile: Pick<Profile, "start_date" | "mode">) => request<Profile>("profile", "PUT", profile),
-  resetData: () => request<void>("data", "DELETE"),
+  resetData: () => request<void>(`data?today=${todayISO()}`, "DELETE"),
   cards: () => request<Card[]>("cards"),
   queue: () => request<Card[]>(`cards/queue?today=${todayISO()}`),
   addCard: (front: string, back: string) => request<Card>("cards", "POST", { front, back, today: todayISO() }),
@@ -35,6 +35,6 @@ export const api = {
   addNote: (vi: string) => request<Note>("notes", "POST", { vi }),
   suggest: (id: string) => request<Note>(`notes/${id}/suggest`, "POST"),
   addOption: (id: string, en: string) => request<Note>(`notes/${id}/options`, "POST", { en }),
-  optionToCard: (id: string, index: number) => request<Note>(`notes/${id}/cards`, "POST", { index, today: todayISO() }),
+  optionToCard: (id: string, index: number, optionsVersion: string) => request<Note>(`notes/${id}/cards`, "POST", { index, today: todayISO(), options_version: optionsVersion }),
   deleteNote: (id: string) => request<void>(`notes/${id}`, "DELETE"),
 };

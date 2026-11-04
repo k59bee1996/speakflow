@@ -26,8 +26,9 @@ public static class ProfileEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(profile);
         });
-        app.MapDelete("/api/data", async (HttpContext context, SpeakflowDbContext db, TimeProvider clock, CancellationToken ct) =>
+        app.MapDelete("/api/data", async (DateOnly today, HttpContext context, SpeakflowDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
+            if (!ApiData.ValidToday(today, clock)) return ApiData.Invalid("Ngày bắt đầu không hợp lệ.");
             var uid = ApiData.UserId(context);
             return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
             {
@@ -39,7 +40,7 @@ public static class ProfileEndpoints
                 db.Notes.RemoveRange(await db.Notes.Where(n => n.UserId == uid).ToListAsync(ct));
                 var profile = await db.Profiles.SingleAsync(p => p.UserId == uid, ct);
                 profile.Mode = "30";
-                profile.StartDate = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+                profile.StartDate = today;
                 profile.Checks = [];
                 profile.SeededWeeks = [];
                 // Keep AI usage so resetting learning data cannot bypass the daily limit.

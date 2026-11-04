@@ -59,7 +59,7 @@ export default function NotesView() {
   }
   async function toCard(note: Note, i: number) {
     if (note.carded.includes(i)) return;
-    try { patchNote(note.id, await api.optionToCard(note.id, i)); await refreshDue(); }
+    try { patchNote(note.id, await api.optionToCard(note.id, i, note.options_version)); await refreshDue(); }
     catch (e) { setNoteErr(er => ({ ...er, [note.id]: e instanceof Error ? e.message : "Chưa thêm được thẻ." })); }
   }
   async function remove(id: string) {
