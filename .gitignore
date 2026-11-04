@@ -46,6 +46,19 @@ Thumbs.db
 .agents/skills/*
 !.agents/skills/se-flow/
 !.agents/skills/se-flow/**
+!.agents/skills/ticket/
+!.agents/skills/ticket/**
+!.agents/skills/ticket-plan/
+!.agents/skills/ticket-plan/**
+!.agents/skills/ticket-implement/
+!.agents/skills/ticket-implement/**
+!.agents/skills/ticket-validate/
+!.agents/skills/ticket-validate/**
+!.agents/skills/ticket-review/
+!.agents/skills/ticket-review/**
+
+# Local ticket workflow artifacts
+.work/
 
 # Local Codex hook logs
 .codex/
