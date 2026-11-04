@@ -34,6 +34,26 @@ Before each stage, ask exactly one Run / Skip / Stop here question. Include the 
 - Plan, Implement, Validate and Review must follow their respective `.agents/skills/ticket-<stage>/SKILL.md`. Pass artifact paths, repo/worktree identities, scope and applicable instructions.
 - Delegate stages when the host supports delegation; otherwise disclose the limitation and perform inline within the same authorization and stage contract. Do not invent a controller, agent, tool, MCP integration or result.
 
+### Stage model routing
+
+Use these defaults for stage workers. Model and effort are separate choices; writing them in a skill does not change the parent session's model.
+
+| Stage | Codex model / reasoning effort | Claude Code model / effort | Worker scope |
+|---|---|---|---|
+| Intake | `gpt-6-luna` / `low` | `haiku` / `low` | Extract ticket and linked-document requirements for the context draft. |
+| Plan | `gpt-6.1-sol` / `high` | `opus` / `high` | Produce the repository-grounded plan. |
+| Implement | `gpt-6-luna` / `medium` | `sonnet` / `medium` | Implement the authorized plan. |
+| Validate | `gpt-6-luna` / `low` | `haiku` / `low` | Run scoped checks and record raw evidence. |
+| Review | `gpt-6.1-sol` / `high` | `opus` / `high` | Independently inspect the full diff and handle scoped findings. |
+| PR | `gpt-6-luna` / `low` | `haiku` / `low` | Draft the proposal, commit message and PR text. |
+| Retro | `gpt-6-luna` / `low` | `haiku` / `low` | Analyze the run and propose exact durable rules. |
+| Teardown | `gpt-6.1-sol` / `medium` | `sonnet` / `medium` | Analyze merge, content and unpublished-work evidence. |
+
+- Codex: pass the table's `model` and `reasoning_effort` as actual subagent invocation arguments, with `fork_turns="none"` when an override requires it. Supply the worker's task, relevant rules, artifact paths, repository identities and current gate authorization explicitly; an isolated worker does not inherit the conversation. Claude Code: pass the table's model alias and effort on each Agent invocation, or set both in a stage-specific subagent definition when invocation parameters are unavailable. Do not rely on prompt wording or skill frontmatter alone to select a model.
+- Copilot: use the same capability tiers (light for Intake/Validate/PR/Retro, strong for Plan/Review, balanced for Implement/Teardown). Set the model on a custom agent only after confirming its exact ID is available in the active Copilot host. If the host cannot route a stage to that model, disclose the actual model or inherited default; do not claim the tier was enforced.
+- The parent owns stage selection, approval gates, repository setup, artifact acceptance, commits, pushes, PR creation and teardown mutations. For Intake, PR, Retro and Teardown, delegate only the worker scope in the table, then independently verify its evidence and perform authorized parent actions. For Plan, Implement, Validate and Review, delegate the stage contract. Review's validation rerun uses the Validate model when delegated.
+- If a configured model or effort is unavailable, use the nearest available model that can meet the stage contract and record the substitution in the handoff. For a mechanical implementation, `gpt-6-luna` may use `low` effort; raise effort or model only when scope or observed failures justify it, and record the reason. If no delegation is available, run inline and report that the requested stage model was not independently selected.
+
 ## Repository setup and safe resume
 
 Before source analysis, list the touched repos and areas; read root and area rules before planning/editing, and list the rules read in the plan. Keep changes in ticket scope, use no new dependencies, never commit secrets, check the full diff for secrets, and preserve unrelated work. Never stash, discard, force-switch, force-push, amend pushed commits, or commit to default/release branches.
