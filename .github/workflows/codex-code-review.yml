@@ -2,7 +2,8 @@ name: Codex Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened, edited]
+    # Review on initial eligibility or head updates, never on metadata edits/comments.
+    types: [opened, synchronize, ready_for_review]
   # Keeps the ChatGPT session in auth.json refreshed when no PR has run for a while.
   schedule:
     - cron: "17 2 * * 1"
