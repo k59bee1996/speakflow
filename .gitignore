@@ -50,4 +50,5 @@ Thumbs.db
 # Local Codex hook logs
 .codex/
 .archify/
+docs/verification/
 
