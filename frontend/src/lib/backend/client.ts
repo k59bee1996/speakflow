@@ -29,7 +29,9 @@ export const api = {
   cards: () => request<Card[]>("cards"),
   queue: () => request<Card[]>(`cards/queue?today=${todayISO()}`),
   addCard: (front: string, back: string) => request<Card>("cards", "POST", { front, back, today: todayISO() }),
-  grade: (id: string, grade: number) => request<Card>(`cards/${id}/grade`, "POST", { grade, today: todayISO() }),
+  grade: (card: Pick<Card, "id" | "reps" | "lapses">, grade: number) => request<Card>(`cards/${card.id}/grade`, "POST", {
+    grade, today: todayISO(), expected_reps: card.reps, expected_lapses: card.lapses,
+  }),
   deleteCard: (id: string) => request<void>(`cards/${id}`, "DELETE"),
   notes: () => request<Note[]>("notes"),
   addNote: (vi: string) => request<Note>("notes", "POST", { vi }),

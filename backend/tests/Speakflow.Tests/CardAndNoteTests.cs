@@ -37,7 +37,7 @@ public sealed class CardAndNoteTests
         db.Reviews.AddRange(Enumerable.Range(0, 10).Select(_ => new Review { UserId = factory.UserA, CardId = due.Id, WasNew = true, ReviewedOn = today, ReviewedAt = factory.Clock.Now }));
         await db.SaveChangesAsync();
         queue = await Json(await client.GetAsync($"/api/cards/queue?today={today:yyyy-MM-dd}")); Assert.AreEqual(2, queue.GetArrayLength());
-        Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync($"/api/cards/{newId}/grade", new { grade = 2, today })).StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync($"/api/cards/{newId}/grade", new { grade = 2, today, expected_reps = 0, expected_lapses = 0 })).StatusCode);
         Assert.AreEqual(HttpStatusCode.BadRequest, (await client.GetAsync($"/api/cards/queue?today={today.AddDays(-3):yyyy-MM-dd}")).StatusCode);
         queue = await Json(await client.GetAsync($"/api/cards/queue?today={today.AddDays(1):yyyy-MM-dd}")); Assert.AreEqual(13, queue.GetArrayLength());
     }
@@ -51,12 +51,12 @@ public sealed class CardAndNoteTests
             Assert.AreEqual(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/cards", new { front, back = "valid", today })).StatusCode);
         var card = await Json(await client.PostAsJsonAsync("/api/cards", new { front = "xin chào", back = "hello", today }), HttpStatusCode.Created);
         var id = card.GetProperty("id").GetGuid();
-        var graded = await Json(await client.PostAsJsonAsync($"/api/cards/{id}/grade", new { grade = 0, today }));
+        var graded = await Json(await client.PostAsJsonAsync($"/api/cards/{id}/grade", new { grade = 0, today, expected_reps = 0, expected_lapses = 0 }));
         Assert.AreEqual(1, graded.GetProperty("lapses").GetInt32()); Assert.IsFalse(graded.GetProperty("is_new").GetBoolean());
         Assert.AreEqual(today.ToString("yyyy-MM-dd"), graded.GetProperty("due").GetString());
         using var b = factory.NewClient(); await AuthTests.Login(b, "b@example.test");
         Assert.AreEqual(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/cards/{id}")).StatusCode);
-        Assert.AreEqual(HttpStatusCode.NotFound, (await b.PostAsJsonAsync($"/api/cards/{id}/grade", new { grade = 2, today })).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await b.PostAsJsonAsync($"/api/cards/{id}/grade", new { grade = 2, today, expected_reps = 0, expected_lapses = 1 })).StatusCode);
         using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<SpeakflowDbContext>();
         var review = await db.Reviews.SingleAsync(); Assert.AreEqual(today, review.ReviewedOn); Assert.AreEqual(factory.UserA, review.UserId);
         Assert.AreEqual(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/cards/{id}")).StatusCode);

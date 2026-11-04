@@ -39,7 +39,7 @@ export default function CardsView() {
     if (!cur || busy.current) return;
     busy.current = true;
     try {
-      const updated = await api.grade(cur.id, g);
+      const updated = await api.grade(cur, g);
       setQueue(q => q ? (g === 0 ? [...q.filter(c => c.id !== cur.id), updated] : q.filter(c => c.id !== cur.id)) : q);
       setAll(cards => cards.map(c => c.id === cur.id ? updated : c));
       setFlipped(false); setHeard(null); setReviewed(n => n + 1);

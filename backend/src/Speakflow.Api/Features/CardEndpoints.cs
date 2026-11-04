@@ -8,7 +8,7 @@ namespace Speakflow.Api.Features;
 public static class CardEndpoints
 {
     public sealed record NewCard(string? Front, string? Back, DateOnly Today);
-    public sealed record GradeCard(int Grade, DateOnly Today);
+    public sealed record GradeCard(int Grade, DateOnly Today, int? ExpectedReps, int? ExpectedLapses);
 
     public static void MapCardEndpoints(this WebApplication app)
     {
@@ -50,6 +50,9 @@ public static class CardEndpoints
                 await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
                 var card = await db.Cards.SingleOrDefaultAsync(c => c.Id == id && c.UserId == uid, ct);
                 if (card is null) return ApiData.Missing();
+                // Each grade changes Reps, or resets Reps and increments Lapses. The pair identifies the displayed attempt.
+                if (input.ExpectedReps != card.Reps || input.ExpectedLapses != card.Lapses)
+                    return Results.Problem(statusCode: 409, detail: "Thẻ đã được chấm điểm. Bạn hãy tải lại trang trước khi ôn tiếp.");
                 if (card.IsNew && await db.Reviews.CountAsync(r => r.UserId == uid && r.WasNew && r.ReviewedOn == input.Today, ct) >= 10)
                     return ApiData.Invalid("Bạn đã học đủ 10 thẻ mới hôm nay.");
                 var next = Srs.Plan(card.IntervalDays, card.Ease, card.Reps, input.Grade);
