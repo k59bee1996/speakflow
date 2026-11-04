@@ -16,6 +16,24 @@ Use this skill to carry an engineering request to a reviewable result in the cur
 - `local` leaves the work in the tree. `pr` requests a focused commit and pull request, subject to available tools and repository access.
 - Work on the current checkout. Never overwrite unrelated changes or assume a clean tree.
 
+## Model routing by stage
+
+The parent agent owns the workflow ID, repository lock, controller transitions, and final delivery decisions. After `start` acquires the lock, delegate each substantive stage as a separate, sequential subagent task using the exact model and reasoning effort below. Set `fork_turns="none"` so an explicit model override takes effect, and pass the task, relevant rules, verified commit, prior stage findings, and limits in the prompt. Wait for the result before advancing. Do not reuse a subagent across stages with different model settings.
+
+| Stage work | Model | Reasoning effort |
+| --- | --- | --- |
+| Issue intake and requirements extraction | `gpt-6-luna` | `low` |
+| Repository context, code tracing, and impact evidence | `gpt-6-luna` | `high` |
+| Technical plan and any replan | `gpt-6.1-sol` | `high` |
+| Implementation of the verified plan | `gpt-6-luna` | `medium` |
+| Interpretation of verification results | `gpt-6-luna` | `low` |
+| Independent engineering review | `gpt-6.1-sol` | `high` |
+| Delivery summary or PR draft | `gpt-6-luna` | `low` |
+
+Use the subagent tool's explicit `model` and `reasoning_effort` settings; a model name written only in the prompt does not select it. If the required model or subagent capability is unavailable, report that fact and end through the controlled `abort` path. Do not silently run the stage on another model or the parent model. The controller does not select models; its lock, freshness, and phase gates remain mandatory.
+
+Only the parent calls `start`, `intake`, `freshness`, `plan`, `branch`, `advance`, `complete`, or `abort`. Stage agents work within the current phase and do not start their own workflow. For repository mutations, the implementing agent must verify ownership with `workflow.mjs status --id <workflow-id>` immediately before each edit or other write, as required below. Pass the root and applicable area instructions explicitly because a fresh subagent does not inherit the parent conversation. Keep the handoff concise and evidence-based; include unresolved questions instead of invented answers.
+
 ## Phase 0 — Acquire Repository Lock
 
 Before Phase 1, acquire the filesystem lock for both `mode=plan` and `mode=full`. Do not run Git commands, inspect repository contents, or fetch the issue until acquisition succeeds. The utility's bootstrap lookup of `.git` and worktree `commondir` metadata is the only repository access before acquisition.
@@ -106,23 +124,23 @@ Only after the gate passes:
 
 ### Phase 3 — Technical Plan
 
-- Verify lock ownership. State scope, non-goals, affected interfaces, risks, edge cases, security and regression impact, and concise implementation and verification steps.
+- Verify lock ownership. Have the plan-stage agent state scope, non-goals, affected interfaces, risks, edge cases, security and regression impact, and concise implementation and verification steps. The plan must identify the files or symbols to change, expected behavior, interface changes, and checks clearly enough for the implementation-stage agent to execute without making new architecture or product decisions.
 - After the plan is ready, run `workflow.mjs plan --id <workflow-id>`; it rechecks that freshness evidence and repository state are unchanged. In `mode=plan`, report the plan, run `workflow.mjs complete --id <workflow-id>`, and stop without edits. In `mode=full`, proceed when sufficiently clear and safe. Pause for destructive, high-risk, or materially ambiguous decisions.
 
 ### Phase 4 — Branch Preparation and Implementation
 
 - Run `workflow.mjs branch --id <workflow-id> --issue <number>` for issue branch preparation in `mode=full`; it revalidates the recorded branch, HEAD, working tree, and fetched base SHA immediately before a branch mutation. It creates a new issue branch from that exact base commit when on the verified base branch or detached at that exact commit, or accepts an already checked-out existing issue branch only when the base is an ancestor. A stale/diverged branch blocks; never automatically merge/rebase it. Never create or switch branches in `mode=plan`. Preserve local changes and do not switch branches if doing so risks them. Then move the controller to `IMPLEMENTING` before edits.
-- Make the smallest maintainable change that meets confirmed acceptance criteria. Reuse existing abstractions and relevant role guidance. Add or update focused tests where the project supports them. Avoid unrelated refactors, dependencies, and files.
-- Do not create agents, hooks, or parallel work unless a relevant existing agent/tool makes it useful and coordination is clear. Never create infrastructure just to satisfy this workflow.
+- Give the implementation-stage agent the verified plan and affected-area rules. It makes the smallest maintainable change that meets confirmed acceptance criteria, reuses existing abstractions, and adds or updates focused tests where supported. Avoid unrelated refactors, dependencies, and files.
+- If the plan is incomplete or contradicts the code, stop implementation and send the concrete evidence back to a new plan-stage agent. Continue only after the parent verifies the revised plan, current lock, branch, and baseline. The `plan` controller command is not repeated after branch preparation. Do not let the implementation agent invent the missing decision.
 
 ### Phase 5 — Verification
 
 - Verify ownership before the phase and immediately before each check that may write generated files. Choose checks from the affected area's instructions and actual repository scripts. For the current frontend, available checks include `npm run lint`, `npm run lint:styles`, `npm run typecheck`, and `npm run build`; it has no test script. The backend rules require `dotnet build` and `dotnet test` when backend work is in scope. For lesson content, follow its README and inspect the actual validation/seed command before using it.
-- Run checks relevant to the change and acceptance criteria. Report exact commands and outcomes; do not claim an unrun check passed. Fix regressions caused by the change and rerun affected checks. Distinguish known baseline failures from new failures.
+- Run checks relevant to the change and acceptance criteria. A verification-stage agent may interpret results, but deterministic checks remain ordinary commands. Report exact commands and outcomes; do not claim an unrun check passed. Send regressions caused by the change to an implementation-stage agent, then rerun affected checks. Distinguish known baseline failures from new failures.
 
 ### Phase 6 — Engineering Review
 
-- Verify ownership before the phase and before any review fix. Inspect the complete diff and changed files for correctness, security, maintainability, performance, architectural fit, and regressions. Use an independent reviewer only when an appropriate agent is actually available and useful; do not invent one. Fix actionable findings and rerun affected checks. Report unresolved risks.
+- Verify ownership before the phase and before any review fix. Give the review-stage agent the complete diff, plan, acceptance criteria, and verification results. It inspects correctness, security, maintainability, performance, architectural fit, and regressions independently. Send actionable fixes to an implementation-stage agent and rerun affected checks. Report unresolved risks.
 
 ### Phase 7 — Delivery
 
