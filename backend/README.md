@@ -7,6 +7,8 @@ ASP.NET Core API and SQL Server data model for Speakflow. Schema changes are mad
 - .NET 10 SDK
 - Docker Desktop with its Linux engine running
 
+The local Compose database binds to `127.0.0.1:1433` on the host. SQL Server Developer and the ASP.NET development certificate are for local development only; do not expose SQL Server to a network or use the Developer edition in production. This setup does not configure production hosting or backups.
+
 ## Run locally
 
 From this directory, start SQL Server after setting a strong local password in the current shell. Do not put the password in this repository.
