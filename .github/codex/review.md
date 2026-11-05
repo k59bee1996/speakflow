@@ -110,7 +110,6 @@ Steps (in order):
    | `npm --prefix frontend run lint:styles` | Standard CSS checks; forbidden raw colors/functions and restricted font-family declarations | `frontend/.stylelintrc.json`; token-file overrides apply, and the script covers CSS files rather than all TSX styling |
    | `npm --prefix frontend run typecheck` | TypeScript static checks with strict mode and no emit | `frontend/tsconfig.json`; runtime payloads, ownership and behavioral correctness remain review concerns |
    | `npm --prefix frontend run build` | Next production compilation and configured build-time checks | `frontend/package.json`, `frontend/next.config.ts`; do not assume this runs ESLint |
-   | se-flow Node tests | Existing assertions for repository-lock and workflow-controller behavior | `.agents/skills/se-flow/scripts/repo-lock.test.mjs` and `workflow.test.mjs`; not application coverage |
    | Application/backend tests | No frontend test script/framework or backend project/tests at rules version 1 | Do not assume SRS, queue, auth, lesson validation or API behavior is tested; inspect any tests the PR introduces |
 
    These are configured local checks, not evidence that CI ran or passed them. No tracked
