@@ -22,11 +22,15 @@ Stages: Intake -> Plan -> Implement -> Validate -> Review -> PR -> Retro. Teardo
 ## Modes and gates
 
 - **Manual:** Ask one Run / Skip / Stop question before every stage. After each, display the handoff below and wait for approval to continue.
-- **Hybrid:** Ask before Plan and hard-stop for plan approval. At that approval gate collect the combined Run/Skip selections for Implement and Validate (a Stop ends work), then chain selected stages. Hard-stop before Review and before PR. Intake and remaining stage choices still receive Run / Skip / Stop decisions; do not insert extra gates inside the selected Implement/Validate chain.
+- **Hybrid:** Use these choice gates only:
+  1. At entry, collect Intake and Plan choices if scheduled, then run them without another question between stages.
+  2. After Plan, show it and hard-stop for approval. At that gate collect Implement and Validate choices together, then run the selected chain without pausing between stages.
+  3. Before Review, collect its choice. Before PR, collect PR and Retro choices; the concrete PR batch still needs its separate fresh `yes`.
+  Teardown has its own gate on a separate invocation. On resume past a gate, collect only missing pending choices at entry; never ask again for a recorded choice unless a changed plan/scope invalidates it. A Stop ends work.
 - **Auto:** Collect all stage Run/Skip selections once up front; Stop cancels. Chain selected stages up to PR. Loop Implement -> Validate at most three times until the validation artifact's exact final line is `VALIDATION: PASS`. Record each attempt. Stop on an external/setup blocker or when three attempts fail; do not claim an unrun/skipped Validate passed.
 - **Every mode:** Hard-stop before PR for a concrete proposal and a separate fresh user `yes`. Stage selection, plan approval, auto mode and prior approvals are not this approval. No push, PR creation, comment, shared database write or other external side effect without fresh explicit approval for its exact batch.
 
-Before each stage, ask exactly one Run / Skip / Stop here question. Include the stage number/name, a one-line summary of its action, and the artifact path it will write (or `none` for Retro/Teardown). Use `AskUserQuestion` when the host exposes it; otherwise present that same single question in chat and wait. In Auto, collect the stage choices together up front, with each stage's summary and artifact path shown. In Hybrid, show both Implement and Validate summaries/artifacts at their combined choice gate. A `--skip` pre-answer suppresses that stage's question. Never infer approval from silence.
+At each mode-specific choice gate, collect each undecided stage's Run / Skip / Stop choice once. Show its number/name, a one-line action summary and artifact path (or `none` for Retro/Teardown). Use `AskUserQuestion` when exposed; otherwise ask in chat and wait. Manual asks before each stage; Hybrid uses only the gates above; Auto collects all choices up front. A `--skip` pre-answer suppresses that choice. On resume, honor recorded choices and approvals unless invalidated by changed scope; never infer a missing approval from silence.
 
 ## Host and stage execution
 
@@ -133,7 +137,7 @@ Only via `--from=teardown`; load context and PR artifacts first.
 
 ## Between-stage handoff
 
-After every stage, use this exact shape with 3–6 key points and honest pipeline checkboxes. For a skipped/stopped stage use `### Artifact: —`, explain `Skipped — <reason>` or the blocker, and do not check it as complete.
+After every stage, use this exact shape with 3–6 key points and honest pipeline checkboxes. For a skipped/stopped stage use `### Artifact: —`, explain `Skipped — <reason>` or the blocker, and do not check it as complete. In Hybrid and Auto, this handoff is a progress update: continue to the next selected stage without a new question unless its scheduled gate, a required approval or a blocker requires a stop.
 
 ```markdown
 ## Stage N: <name>
