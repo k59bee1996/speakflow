@@ -44,8 +44,6 @@ Thumbs.db
 .agents/*
 !.agents/skills/
 .agents/skills/*
-!.agents/skills/se-flow/
-!.agents/skills/se-flow/**
 !.agents/skills/ticket/
 !.agents/skills/ticket/**
 !.agents/skills/ticket-plan/
